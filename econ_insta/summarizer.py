@@ -18,6 +18,7 @@ import anthropic
 
 from .collector import Article, DailyBrief, Quote, collect
 from .config import _load_dotenv
+from .factcheck import has_digits, unsupported_amounts
 
 MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8000
@@ -46,6 +47,12 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
   본문에 있었을 법한 수치·배경·인용을 추측해 채우지 마십시오.
 - 어떤 경우에도 주어진 자료에 없는 수치, 인물, 발언을 만들어내지 마십시오.
 - 확신이 서지 않는 기사는 카드로 만들지 말고 건너뛰십시오.
+
+수치 규칙 (기계적으로 검증되며, 위반 시 카드가 폐기됩니다):
+- headline과 indicator_note에는 숫자를 단 하나도 쓰지 마십시오. 지표 수치는 카드 이미지에
+  코드가 직접 새기므로 문장에서 반복할 필요가 없습니다. 흐름을 말로 서술하십시오.
+- 카드 body의 모든 수치는 제공된 자료에 있는 값이어야 합니다. 단위 환산(예: $26.51 billion
+  → 265억 달러)은 괜찮지만, 값을 바꾸거나(41조 → 40조) 없는 값을 만들지 마십시오.
 
 편집 기준:
 - 카드는 {MIN_CARDS}~{MAX_CARDS}장. 거시경제·시장·산업에서 파급력이 큰 것부터 고르십시오.
@@ -97,6 +104,8 @@ class Briefing:
     quotes: list[Quote]
     input_tokens: int = 0
     output_tokens: int = 0
+    dropped_cards: int = 0
+    """수치 검증에 걸려 폐기된 카드 수. 0이 아니면 로그로 남겨야 한다."""
 
     @property
     def cost_usd(self) -> float:
@@ -151,21 +160,40 @@ def _validate(payload: dict) -> None:
             raise SummarizeError(f"{i}번 카드에 출처가 없습니다.")
 
 
-def summarize(
-    brief: DailyBrief,
-    client: anthropic.Anthropic | None = None,
-    model: str = MODEL,
-) -> Briefing:
-    _load_dotenv()
-    caller = client or anthropic.Anthropic()
+def audit(payload: dict, source: str) -> dict[str, list[str]]:
+    """근거 없는 수치를 찾는다. 키는 'headline' | 'indicator_note' | 'card:<index>'."""
+    problems: dict[str, list[str]] = {}
 
+    for field in ("headline", "indicator_note"):
+        if has_digits(payload[field]):
+            problems[field] = ["숫자 사용 금지"]
+
+    for index, card in enumerate(payload["cards"]):
+        bad = unsupported_amounts(f"{card['title']} {card['body']}", source)
+        if bad:
+            problems[f"card:{index}"] = bad
+
+    return problems
+
+
+def _describe(problems: dict[str, list[str]]) -> str:
+    lines = []
+    for key, items in problems.items():
+        if key.startswith("card:"):
+            lines.append(f"- {int(key[5:]) + 1}번 카드: 자료에 없는 수치 {', '.join(items)}")
+        else:
+            lines.append(f"- {key}: 숫자를 쓰지 마십시오")
+    return "\n".join(lines)
+
+
+def _generate(caller, model: str, prompt: str) -> tuple[dict, int, int]:
     response = caller.messages.create(
         model=model,
         max_tokens=MAX_TOKENS,
         system=SYSTEM,
         thinking={"type": "adaptive"},
         output_config={"effort": EFFORT, "format": {"type": "json_schema", "schema": SCHEMA}},
-        messages=[{"role": "user", "content": build_prompt(brief)}],
+        messages=[{"role": "user", "content": prompt}],
     )
 
     if response.stop_reason == "max_tokens":
@@ -183,14 +211,56 @@ def summarize(
         raise SummarizeError(f"JSON 파싱 실패: {exc}") from exc
 
     _validate(payload)
+    return payload, response.usage.input_tokens, response.usage.output_tokens
+
+
+def summarize(
+    brief: DailyBrief,
+    client: anthropic.Anthropic | None = None,
+    model: str = MODEL,
+) -> Briefing:
+    """생성 → 수치 감사 → (위반 시) 1회 재생성 → 남은 위반 카드는 폐기."""
+    _load_dotenv()
+    caller = client or anthropic.Anthropic()
+    prompt = build_prompt(brief)
+
+    payload, input_tokens, output_tokens = _generate(caller, model, prompt)
+    problems = audit(payload, prompt)
+
+    if problems:
+        retry_prompt = (
+            f"{prompt}\n\n"
+            "[직전 시도의 문제 — 반드시 고칠 것]\n"
+            f"{_describe(problems)}\n"
+            "수치는 자료에 있는 값만 쓰고, headline과 indicator_note에는 숫자를 쓰지 마십시오."
+        )
+        payload, retry_in, retry_out = _generate(caller, model, retry_prompt)
+        input_tokens += retry_in
+        output_tokens += retry_out
+        problems = audit(payload, prompt)
+
+    # 재시도 후에도 헤드라인·지표 코멘트가 틀렸다면 발행하지 않는다. 카드는 버릴 수 있지만
+    # 표지 문구는 대체할 방법이 없다.
+    for field in ("headline", "indicator_note"):
+        if field in problems:
+            raise SummarizeError(f"{field}에 근거 없는 숫자가 남았습니다: {payload[field]!r}")
+
+    dropped = {int(key[5:]) for key in problems}
+    cards = [Card(**c) for i, c in enumerate(payload["cards"]) if i not in dropped]
+
+    if len(cards) < MIN_CARDS:
+        raise SummarizeError(
+            f"수치 검증 후 카드가 {len(cards)}장뿐입니다 (최소 {MIN_CARDS}장). 폐기된 카드 {len(dropped)}장."
+        )
 
     return Briefing(
         headline=payload["headline"],
         indicator_note=payload["indicator_note"],
-        cards=[Card(**c) for c in payload["cards"]],
+        cards=cards,
         quotes=brief.quotes,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        dropped_cards=len(dropped),
     )
 
 
@@ -216,6 +286,9 @@ def main() -> int:
     print(f"지표 코멘트: {briefing.indicator_note}")
     for quote in briefing.quotes:
         print(f"  {quote.name:<8} {quote.price_text:>12}  {quote.change_text:>8}")
+
+    if briefing.dropped_cards:
+        print(f"\n[경고] 수치 검증에 걸려 카드 {briefing.dropped_cards}장을 폐기했습니다.")
 
     print(
         f"\n토큰: 입력 {briefing.input_tokens}, 출력 {briefing.output_tokens} "

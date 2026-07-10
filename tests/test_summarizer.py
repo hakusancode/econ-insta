@@ -12,6 +12,7 @@ from econ_insta.summarizer import (
     CARD_BODY_MAX,
     HEADLINE_MAX,
     SummarizeError,
+    audit,
     build_prompt,
     render_article,
     summarize,
@@ -37,32 +38,47 @@ def brief(articles=None, quotes=None):
     )
 
 
-def payload(cards=3, headline="오늘의 경제", body="본문입니다."):
+NAMES = "가나다라마바사"
+
+
+def payload(cards=3, headline="오늘의 경제", body="본문입니다.", note="지수가 일제히 올랐다."):
+    """검증을 통과하는 깨끗한 응답. 제목·본문에 숫자를 넣지 않는다."""
     return {
         "headline": headline,
-        "indicator_note": "지수가 일제히 올랐다.",
+        "indicator_note": note,
         "cards": [
-            {"title": f"카드{i}", "body": body, "source": "매일경제"} for i in range(cards)
+            {"title": f"카드{NAMES[i]}", "body": body, "source": "매일경제"} for i in range(cards)
         ],
     }
 
 
 class FakeClient:
-    """messages.create()가 지정된 JSON을 텍스트 블록으로 돌려준다."""
+    """messages.create()가 지정된 JSON을 텍스트 블록으로 돌려준다.
+
+    data에 리스트를 주면 호출 순서대로 다른 응답을 낸다 (재시도 경로 검증용).
+    """
 
     def __init__(self, data, stop_reason="end_turn", text=None):
-        body = text if text is not None else json.dumps(data, ensure_ascii=False)
-        self.response = SimpleNamespace(
-            stop_reason=stop_reason,
-            content=[SimpleNamespace(type="text", text=body)],
-            usage=SimpleNamespace(input_tokens=3000, output_tokens=800),
-        )
+        self.bodies = [
+            text if text is not None else json.dumps(d, ensure_ascii=False)
+            for d in (data if isinstance(data, list) else [data])
+        ]
+        self.stop_reason = stop_reason
+        self.calls = 0
         self.captured = {}
+        self.prompts: list[str] = []
         self.messages = SimpleNamespace(create=self._create)
 
     def _create(self, **kwargs):
         self.captured = kwargs
-        return self.response
+        self.prompts.append(kwargs["messages"][0]["content"])
+        body = self.bodies[min(self.calls, len(self.bodies) - 1)]
+        self.calls += 1
+        return SimpleNamespace(
+            stop_reason=self.stop_reason,
+            content=[SimpleNamespace(type="text", text=body)],
+            usage=SimpleNamespace(input_tokens=3000, output_tokens=800),
+        )
 
 
 class RenderArticleTest(unittest.TestCase):
@@ -164,6 +180,75 @@ class SummarizeTest(unittest.TestCase):
     def test_bad_json_raises(self):
         with self.assertRaises(SummarizeError):
             summarize(brief(), client=FakeClient(None, text="{not json"))
+
+    def test_clean_output_does_not_retry(self):
+        client = FakeClient(payload())
+        summarize(brief(), client=client)
+        self.assertEqual(client.calls, 1)
+
+
+class AuditTest(unittest.TestCase):
+    def test_digits_in_headline_flagged(self):
+        self.assertIn("headline", audit(payload(headline="코스피 7% 급등"), "코스피 2.52%"))
+
+    def test_digits_in_indicator_note_flagged(self):
+        self.assertIn("indicator_note", audit(payload(note="1,503원대"), "환율 1,503.6"))
+
+    def test_unsupported_card_number_flagged(self):
+        data = payload(body="국고채 40조 순매수")
+        self.assertEqual(audit(data, "국고채 41조 순매수")["card:0"], ["40조"])
+
+    def test_supported_card_number_clean(self):
+        data = payload(body="국고채 41조 순매수")
+        self.assertEqual(audit(data, "국고채 41조 순매수"), {})
+
+    def test_clean_payload_has_no_problems(self):
+        self.assertEqual(audit(payload(), "아무 자료"), {})
+
+
+class RetryTest(unittest.TestCase):
+    def test_retries_once_then_succeeds(self):
+        bad = payload(headline="코스피 7% 급등")
+        client = FakeClient([bad, payload()])
+        result = summarize(brief(), client=client)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(result.headline, "오늘의 경제")
+
+    def test_retry_prompt_names_the_problem(self):
+        client = FakeClient([payload(headline="코스피 7% 급등"), payload()])
+        summarize(brief(), client=client)
+        self.assertIn("직전 시도의 문제", client.prompts[1])
+        self.assertIn("headline", client.prompts[1])
+
+    def test_tokens_accumulate_across_retry(self):
+        client = FakeClient([payload(headline="7% 급등"), payload()])
+        result = summarize(brief(), client=client)
+        self.assertEqual(result.input_tokens, 6000)
+        self.assertEqual(result.output_tokens, 1600)
+
+    def test_persistent_headline_violation_raises(self):
+        """표지 문구는 대체할 수 없으므로 발행하지 않는다."""
+        bad = payload(headline="코스피 7% 급등")
+        with self.assertRaises(SummarizeError) as ctx:
+            summarize(brief(), client=FakeClient([bad, bad]))
+        self.assertIn("headline", str(ctx.exception))
+
+    def test_persistent_card_violation_dropped(self):
+        bad = payload(cards=4)
+        bad["cards"][1]["body"] = "국고채 40조 순매수"  # 자료에는 41조
+        b = brief(articles=[article(summary="외국인 국고채 41조 순매수")])
+        result = summarize(b, client=FakeClient([bad, bad]))
+        self.assertEqual(len(result.cards), 3)
+        self.assertEqual(result.dropped_cards, 1)
+        self.assertNotIn("40조", " ".join(c.body for c in result.cards))
+
+    def test_dropping_below_minimum_raises(self):
+        bad = payload(cards=3)
+        bad["cards"][0]["body"] = "국고채 40조"
+        b = brief(articles=[article(summary="외국인 국고채 41조 순매수")])
+        with self.assertRaises(SummarizeError) as ctx:
+            summarize(b, client=FakeClient([bad, bad]))
+        self.assertIn("최소", str(ctx.exception))
 
 
 if __name__ == "__main__":

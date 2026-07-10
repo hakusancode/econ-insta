@@ -205,6 +205,24 @@ class AuditTest(unittest.TestCase):
     def test_clean_payload_has_no_problems(self):
         self.assertEqual(audit(payload(), "아무 자료"), {})
 
+    def test_reversed_won_direction_in_note_flagged(self):
+        quotes = [Quote(symbol="KRW=X", name="원/달러", price=1519.9, change_pct=-0.58)]
+        problems = audit(payload(note="원화는 약세로 돌아섰고"), "아무 자료", quotes)
+        self.assertIn("indicator_note", problems)
+
+    def test_correct_won_direction_in_note_clean(self):
+        quotes = [Quote(symbol="KRW=X", name="원/달러", price=1503.3, change_pct=-1.09)]
+        self.assertEqual(audit(payload(note="원화는 강세로 방향을 튼 하루"), "아무 자료", quotes), {})
+
+    def test_won_claim_in_card_body_is_not_flagged(self):
+        # 카드 본문의 "원화 강세로 전환할 여지" 같은 전망 인용은 지표와 무관하다.
+        quotes = [Quote(symbol="KRW=X", name="원/달러", price=1503.3, change_pct=0.62)]
+        data = payload(body="총재는 원화 강세로 전환할 여지가 크다고 말했다")
+        self.assertEqual(audit(data, data["cards"][0]["body"], quotes), {})
+
+    def test_missing_fx_quote_does_not_flag(self):
+        self.assertEqual(audit(payload(note="원화 강세가 뚜렷하다"), "아무 자료", []), {})
+
 
 class RetryTest(unittest.TestCase):
     def test_retries_once_then_succeeds(self):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from econ_insta.factcheck import extract_amounts, has_digits, unsupported_amounts
+from econ_insta.factcheck import wrong_won_direction, extract_amounts, has_digits, unsupported_amounts
 
 
 def values(text):
@@ -95,6 +95,40 @@ class HasDigitsTest(unittest.TestCase):
 
     def test_false(self):
         self.assertFalse(has_digits("코스피 급등 속 반도체 훈풍"))
+
+
+class WonDirectionTest(unittest.TestCase):
+    """원/달러가 오르면 원화 약세. 모델이 실제로 이 방향을 뒤집어 썼다."""
+
+    def test_claiming_strong_won_while_usdkrw_rose_is_flagged(self):
+        # 실측 사고: +0.14%인 날 "원화도 강세를 보이는"이라고 썼다.
+        self.assertIsNotNone(wrong_won_direction("국내 증시가 오르며 원화도 강세를 보이는 가운데", 0.14))
+
+    def test_claiming_weak_won_while_usdkrw_fell_is_flagged(self):
+        # 실측 사고: -0.58%인 날 "원화는 약세로 돌아섰고"라고 썼다.
+        self.assertIsNotNone(wrong_won_direction("원화는 약세로 돌아섰고 유가만 튀어 올랐다", -0.58))
+
+    def test_correct_directions_pass(self):
+        self.assertIsNone(wrong_won_direction("원화는 강세로 방향을 튼 하루였다", -1.09))
+        self.assertIsNone(wrong_won_direction("원화가 약세를 이어갔다", 0.62))
+
+    def test_sentence_without_won_claim_passes(self):
+        self.assertIsNone(wrong_won_direction("코스피와 코스닥이 나란히 크게 밀렸다", 0.9))
+
+    def test_flat_rate_rejects_any_directional_claim(self):
+        self.assertIsNotNone(wrong_won_direction("원화 강세가 뚜렷하다", 0.01))
+
+    def test_absent_quote_is_not_flagged(self):
+        # 환율 수집이 실패한 날은 판정 근거가 없다. 막지 않는다.
+        self.assertIsNone(wrong_won_direction("원화 강세가 뚜렷하다", None))
+
+    def test_won_value_phrasing_is_understood(self):
+        # '원화값 상승'이 아니라 '원화값'+강세/절상 표현을 잡는다.
+        self.assertIsNotNone(wrong_won_direction("원화값 절상 흐름이 뚜렷하다", 0.5))
+
+    def test_distant_mention_is_not_matched(self):
+        # 12자 넘게 떨어진 '강세'는 원화에 대한 서술이 아닐 수 있다.
+        self.assertIsNone(wrong_won_direction("원화 이야기는 접어두고 증시 전반이 강세", 0.5))
 
 
 if __name__ == "__main__":

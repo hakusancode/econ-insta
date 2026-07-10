@@ -96,3 +96,38 @@ def unsupported_amounts(text: str, source: str) -> list[str]:
 
 def has_digits(text: str) -> bool:
     return any(ch.isdigit() for ch in text)
+
+
+# 원/달러 환율이 오르면 원화는 약세다. 모델은 이 방향을 반복해서 뒤집는다
+# (실측: -0.58%인 날 "원화는 약세로 돌아섰고", +0.14%인 날 "원화도 강세를 보이는").
+# 프롬프트로 지시해도 간헐적으로 재발하므로 숫자 검증과 같은 이유로 코드가 막는다.
+_WON_STRONGER = re.compile(r"원화(?:값)?[^.]{0,12}?(강세|절상)")
+_WON_WEAKER = re.compile(r"원화(?:값)?[^.]{0,12}?(약세|절하)")
+
+# 이보다 작은 변동은 방향을 단정할 근거가 못 된다.
+FLAT_PCT = 0.05
+
+
+def wrong_won_direction(text: str, usdkrw_change_pct: float | None) -> str | None:
+    """원화 강세/약세 서술이 원/달러 등락과 어긋나면 사유를 돌려준다.
+
+    지표에서 파생된 문장(indicator_note)에만 쓸 것. 기사 본문에는 전망·인용이 섞여
+    ("원화 강세로 전환할 여지가 크다") 오탐이 난다.
+    """
+    if usdkrw_change_pct is None:
+        return None
+
+    claims_stronger = bool(_WON_STRONGER.search(text))
+    claims_weaker = bool(_WON_WEAKER.search(text))
+    if not (claims_stronger or claims_weaker):
+        return None
+
+    if abs(usdkrw_change_pct) < FLAT_PCT:
+        return f"원/달러가 보합({usdkrw_change_pct:+.2f}%)인데 원화 방향을 단정함"
+
+    actually_stronger = usdkrw_change_pct < 0
+    if claims_stronger and not actually_stronger:
+        return f"원/달러 {usdkrw_change_pct:+.2f}%(원화 약세)인데 '원화 강세'라고 씀"
+    if claims_weaker and actually_stronger:
+        return f"원/달러 {usdkrw_change_pct:+.2f}%(원화 강세)인데 '원화 약세'라고 씀"
+    return None

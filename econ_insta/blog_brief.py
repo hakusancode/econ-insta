@@ -265,7 +265,7 @@ def build_caption(briefing: BlogBriefing) -> str:
         "",
         briefing.caption_hook,
         "",
-        f"📌 「{BLOG_NAME}」({AUTHOR} 님) 블로그 글을 요약한 게시물입니다.",
+        # 출처 표기는 카드 이미지 하단에 이미 있으므로 캡션에는 원문 링크만 남긴다 (사용자 결정 2026-07-14).
         f"원문 👉 {briefing.post.link}",
     ]
     if briefing.related_cards:

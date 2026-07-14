@@ -29,7 +29,7 @@ from .backgrounds import build_background
 from .collector import Article, CollectError, FeedSpec, collect_articles, now_kst
 from .config import PROJECT_ROOT, _load_dotenv
 from .factcheck import unsupported_amounts
-from .renderer import JPEG_QUALITY, FontSet, render_card, render_cover
+from .renderer import DEFAULT_THEME, JPEG_QUALITY, THEMES, FontSet, Theme, render_card, render_cover
 from .summarizer import MAX_TOKENS, MODEL, Card, SummarizeError
 
 EFFORT = "medium"
@@ -73,7 +73,10 @@ SYSTEM = f"""당신은 한국어 AI 카드뉴스의 에디터입니다.
   연구 결과, 사고·논란.
 - **홍보성 보도자료를 배제하십시오**: 수상, 협약(MOU), 후원, 행사 개최, 인사, 단순 도입 사례,
   "업계 최초"를 자칭하는 자료. AI 뉴스에는 이런 것이 특히 많습니다.
-- 같은 사건을 다룬 기사가 여럿이면 하나만 쓰십시오.
+- **카드 하나가 사건 하나입니다.** 한 사건을 여러 카드로 쪼개지 마십시오. 같은 사건을 다룬
+  기사가 여럿이면 카드 한 장으로 합치십시오. 서로 다른 사건이 {MIN_CARDS}건도 없으면
+  카드 수를 줄이십시오 — 억지로 채우지 마십시오.
+- 한 매체가 전부를 차지하지 않게 하십시오. 가능하면 여러 매체에서 고르십시오.
 
 작성 원칙:
 - 기사 문장을 그대로 옮기지 말고 완전히 새로운 문장으로 다시 쓰십시오 (저작권).
@@ -209,11 +212,15 @@ def summarize_ai(articles: list[Article], client: anthropic.Anthropic | None = N
     if len(cards) < MIN_CARDS:
         raise SummarizeError(f"수치 검증 후 카드가 {len(cards)}장뿐입니다 (최소 {MIN_CARDS}장).")
 
+    cards = cards[:MAX_CARDS]
+    # 태그의 근거는 후보 기사 전체가 아니라 **실제로 실린 카드**다.
+    card_text = " ".join(f"{c.title} {c.body} {c.source}" for c in cards) + " " + payload["headline"]
+
     return AIBriefing(
         headline=payload["headline"],
-        cards=cards[:MAX_CARDS],
+        cards=cards,
         caption_hook=payload["caption_hook"],
-        hashtags=filter_hashtags(payload["hashtags"], prompt)[:MAX_HASHTAGS],
+        hashtags=filter_hashtags(payload["hashtags"], card_text)[:MAX_HASHTAGS],
         bg_query=payload["bg_query"].strip(),
         dropped_cards=dropped,
     )
@@ -233,11 +240,16 @@ def _clean_key(text: str) -> str:
 
 
 def filter_hashtags(tags: list[str], source_text: str) -> list[str]:
-    """기사에 없는 고유명사 태그를 버린다.
+    """실린 카드에 근거가 없는 고유명사 태그를 버린다.
 
-    모델은 해시태그도 지어낸다 — 실제로 어느 기사에도 없는 **#픽버스**를 붙였다.
-    수치 허구와 같은 성질이다. 일반명사는 통과시키고, 그 밖의 태그는 기사 텍스트에
-    실제로 등장할 때만 남긴다.
+    두 가지를 함께 막는다.
+    - **음차한 고유명사**: 모델이 `#픽버스`를 달았다. 지어낸 게 아니라 실재하는 회사
+      PixVerse의 한글 음차였는데, 한글 형태는 기사에 없으니 검증할 수 없다.
+    - **실리지 않은 기사에서 온 태그**: `#PixVerse`는 후보 목록에는 있었지만 카드로는
+      뽑히지 않은 기사에서 왔다. 게시물 내용과 무관한 태그다.
+
+    그래서 source_text는 **후보 기사 전체가 아니라 최종 카드 텍스트**를 넘겨야 한다.
+    일반명사는 카드에 없어도 통과시킨다.
     """
     haystack = _clean_key(source_text)
     kept = []
@@ -264,14 +276,23 @@ def build_caption(brief: AIBriefing, when: datetime, credits: tuple[str, ...] = 
     return "\n".join(lines)
 
 
-def render(brief: AIBriefing, when: datetime, out_dir: Path) -> list[Path]:
+def render(
+    brief: AIBriefing,
+    when: datetime,
+    out_dir: Path,
+    theme: Theme = DEFAULT_THEME,
+    bg_query: str | None = None,
+) -> list[Path]:
+    """카드를 저장한다. bg_query를 주면 모델이 고른 검색어 대신 그것을 쓴다."""
     fonts = FontSet.discover()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     errors: list[str] = []
-    background = build_background([], brief.bg_query, errors=errors)
+    background = build_background([], bg_query or brief.bg_query, errors=errors)
     for message in errors:
         print(f"  ! {message}")
+    if background is None:
+        print("  ! 배경 사진 없음 — 단색 표지로 나갑니다")
 
     images = [
         render_cover(
@@ -280,10 +301,12 @@ def render(brief: AIBriefing, when: datetime, out_dir: Path) -> list[Path]:
             fonts,
             kicker="AI 브리핑",
             background=background.image if background else None,
+            theme=theme,
         )
     ]
     images += [
-        render_card(card, i, len(brief.cards), fonts) for i, card in enumerate(brief.cards, 1)
+        render_card(card, i, len(brief.cards), fonts, theme=theme)
+        for i, card in enumerate(brief.cards, 1)
     ]
 
     paths = []
@@ -294,7 +317,43 @@ def render(brief: AIBriefing, when: datetime, out_dir: Path) -> list[Path]:
 
     credits = background.credits if background else ()
     (out_dir / "caption.txt").write_text(build_caption(brief, when, credits), encoding="utf-8")
+    save_briefing(brief, out_dir)
     return paths
+
+
+def save_briefing(brief: AIBriefing, out_dir: Path) -> Path:
+    """요약 결과를 남긴다. 테마나 배경만 바꿔 다시 렌더할 때 모델을 또 부르지 않기 위해서다
+    (부를 때마다 돈이 들고, 무엇보다 **내용이 달라진다**)."""
+    path = out_dir / "briefing.json"
+    path.write_text(
+        json.dumps(
+            {
+                "headline": brief.headline,
+                "cards": [{"title": c.title, "body": c.body, "source": c.source} for c in brief.cards],
+                "caption_hook": brief.caption_hook,
+                "hashtags": brief.hashtags,
+                "bg_query": brief.bg_query,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def load_briefing(out_dir: Path) -> AIBriefing:
+    data = json.loads((out_dir / "briefing.json").read_text(encoding="utf-8"))
+    cards = [Card(**card) for card in data["cards"]]
+    # 다시 거른다 — 예전에 저장된 파일에는 카드와 무관한 태그가 남아 있을 수 있다.
+    card_text = " ".join(f"{c.title} {c.body} {c.source}" for c in cards) + " " + data["headline"]
+    return AIBriefing(
+        headline=data["headline"],
+        cards=cards,
+        caption_hook=data["caption_hook"],
+        hashtags=filter_hashtags(data["hashtags"], card_text)[:MAX_HASHTAGS],
+        bg_query=data.get("bg_query", ""),
+    )
 
 
 RAW_BASE = "https://raw.githubusercontent.com/hakusancode/econ-insta/main"
@@ -326,29 +385,48 @@ def publish_rendered(out_dir: Path) -> int:
 
 
 def main() -> int:
-    import sys
+    import argparse
 
-    if "--publish" in sys.argv:
-        index = sys.argv.index("--publish")
-        if index + 1 >= len(sys.argv):
-            print("사용법: python -m econ_insta.ai_brief --publish out/<날짜>-ai")
-            return 1
-        return publish_rendered(Path(sys.argv[index + 1]))
+    parser = argparse.ArgumentParser(description="AI 뉴스 브리핑")
+    parser.add_argument("--publish", metavar="OUT_DIR", help="렌더·push가 끝난 디렉터리를 발행")
+    themes = {theme.name.split()[0]: theme for theme in THEMES}  # 다크 / 페이퍼 / 미드나잇 / 모노
+    parser.add_argument(
+        "--theme",
+        default=DEFAULT_THEME.name.split()[0],
+        choices=list(themes),
+        help="카드 테마",
+    )
+    parser.add_argument("--bg", help="표지 배경 검색어 (모델이 고른 것 대신 쓴다)")
+    parser.add_argument(
+        "--rerender",
+        metavar="OUT_DIR",
+        help="저장된 briefing.json으로 다시 렌더한다 (모델을 다시 부르지 않는다)",
+    )
+    args = parser.parse_args()
 
+    if args.publish:
+        return publish_rendered(Path(args.publish))
+
+    theme = themes[args.theme]
     when = now_kst()
-    articles = collect_ai()
-    print(f"기사 {len(articles)}건 수집")
 
-    brief = summarize_ai(articles)
+    if args.rerender:
+        out_dir = Path(args.rerender)
+        brief = load_briefing(out_dir)
+    else:
+        articles = collect_ai()
+        print(f"기사 {len(articles)}건 수집")
+        brief = summarize_ai(articles)
+        out_dir = PROJECT_ROOT / "out" / f"{when:%Y-%m-%d}-ai"
+        if brief.dropped_cards:
+            print(f"  (수치 검증으로 {brief.dropped_cards}장 폐기)")
+
     print(f"\n표지: {brief.headline}")
     for card in brief.cards:
         print(f"  · {card.title} ({card.source})")
-    if brief.dropped_cards:
-        print(f"  (수치 검증으로 {brief.dropped_cards}장 폐기)")
 
-    out_dir = PROJECT_ROOT / "out" / f"{when:%Y-%m-%d}-ai"
-    paths = render(brief, when, out_dir)
-    print(f"\n카드 {len(paths)}장 → {out_dir}")
+    paths = render(brief, when, out_dir, theme=theme, bg_query=args.bg)
+    print(f"\n카드 {len(paths)}장 → {out_dir}  (테마: {theme.name})")
     return 0
 
 

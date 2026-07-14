@@ -43,6 +43,9 @@ Color = tuple[int, int, int]
 PHOTO_SCRIM = (10, 12, 20)
 """사진 표지를 누르는 어두운 막. 테마가 밝아도 이건 어둡다 — 흰 제목이 읽혀야 하므로."""
 
+PHOTO_SUB = (214, 220, 230)
+"""사진 위 보조 텍스트(날짜). MUTED는 밝은 배경 사진에서 묻힌다."""
+
 
 @dataclass(frozen=True)
 class Theme:
@@ -305,8 +308,10 @@ def render_cover(
         draw = ImageDraw.Draw(image)
 
     # 사진 위에서는 어떤 테마든 흰 글씨여야 읽힌다(어두운 스크림으로 눌러둔 위에 얹으므로).
+    # 보조 텍스트(날짜)도 MUTED로 두면 밝은 하늘 위에서 사라진다 — 실제로 삼성 사옥
+    # 표지에서 날짜가 안 보였다. 사진 위에서는 한 단계 밝게 쓴다.
     title_fill = FG if background is not None else theme.fg
-    sub_fill = MUTED if background is not None else theme.muted
+    sub_fill = PHOTO_SUB if background is not None else theme.muted
 
     draw.text((MARGIN, MARGIN), kicker, font=fonts.at(38, bold=True), fill=theme.accent)
     draw.text((MARGIN, MARGIN + 62), f"{when:%Y년 %m월 %d일}", font=fonts.at(32), fill=sub_fill)

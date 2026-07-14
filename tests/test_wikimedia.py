@@ -54,10 +54,11 @@ def _page(
 
 
 class FakeResponse:
-    def __init__(self, payload=None, content=b"", status_code=200):
+    def __init__(self, payload=None, content=b"", status_code=200, headers=None):
         self._payload = payload
         self.content = content
         self.status_code = status_code
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -221,6 +222,32 @@ class DownloadRetryTest(unittest.TestCase):
 
         with self.assertRaises(WikimediaError):
             wikimedia.download(self.image, session=Session(), sleep=lambda _: None)
+
+    def test_짧은_Retry_After는_그만큼_기다린다(self):
+        responses = [
+            FakeResponse(status_code=429, headers={"retry-after": "8"}),
+            FakeResponse(content=_jpeg_bytes(), status_code=200),
+        ]
+
+        class Session:
+            def get(self, url, **kwargs):
+                return responses.pop(0)
+
+        slept = []
+        wikimedia.download(self.image, session=Session(), sleep=slept.append)
+        self.assertEqual(slept, [8.0])
+
+    def test_긴_차단은_기다리지_않고_즉시_실패한다(self):
+        # 공용은 429에 Retry-After: 600(10분)을 붙인다. 발행 파이프라인이 10분을 자면 안 된다.
+        class Session:
+            def get(self, url, **kwargs):
+                return FakeResponse(status_code=429, headers={"retry-after": "600"})
+
+        slept = []
+        with self.assertRaises(WikimediaError) as caught:
+            wikimedia.download(self.image, session=Session(), sleep=slept.append)
+        self.assertEqual(slept, [])  # 한 번도 자지 않았다
+        self.assertIn("600초", str(caught.exception))
 
 
 class ContactSheetTest(unittest.TestCase):

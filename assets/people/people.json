@@ -71,5 +71,28 @@
     "credit": "Photographer: Peter Dasilva (Wikimedia Commons, CC BY 4.0)",
     "source": "https://commons.wikimedia.org/wiki/File:Jensen_Huang_(cropped)_(2024).jpg",
     "license": "CC BY 4.0"
+  },
+  "yellen": {
+    "name": "재닛 옐런",
+    "aliases": [
+      "옐런",
+      "Yellen"
+    ],
+    "file": "yellen.jpg",
+    "credit": "United States Federal Reserve (Wikimedia Commons, Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Janet_Yellen_official_Federal_Reserve_portrait.jpg",
+    "license": "Public domain"
+  },
+  "lee_jaemyung": {
+    "name": "이재명",
+    "aliases": [
+      "이재명",
+      "한국 대통령",
+      "대통령"
+    ],
+    "file": "lee_jaemyung.jpg",
+    "credit": "The White House (Wikimedia Commons, Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Lee_Jae-myung_(2025)_(cropped).jpg",
+    "license": "Public domain"
   }
 }

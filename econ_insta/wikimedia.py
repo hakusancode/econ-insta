@@ -40,6 +40,17 @@ TIMEOUT = 30
 RETRIES = 3
 BACKOFF_SECONDS = 2.0
 
+MAX_WAIT_SECONDS = 60.0
+"""이보다 긴 대기를 요구받으면 기다리지 않고 실패시킨다.
+
+upload.wikimedia.org는 429에 `Retry-After: 600`(10분)을 붙인다. 발행 파이프라인이
+10분을 잠들면 안 되고, 몇 초 백오프로는 애초에 빠져나올 수도 없다. 정직하게 죽고
+얼마나 기다려야 하는지 알려주는 편이 낫다 — 배경은 없어도 발행은 나간다.
+"""
+
+POLITE_DELAY = 1.0
+"""연속 다운로드 사이 간격. 이걸 안 넣고 대조표를 두 번 뽑았다가 10분 차단을 맞았다."""
+
 PEOPLE_DIR = PROJECT_ROOT / "assets" / "people"
 PEOPLE_META = PEOPLE_DIR / "people.json"
 
@@ -174,15 +185,24 @@ def search_images(
     return sorted(found, key=_rank)
 
 
+def _retry_after(response) -> float:
+    """429에 딸려오는 Retry-After(초). 없거나 이상하면 0."""
+    try:
+        return float(response.headers.get("retry-after", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def download(
     image: CommonsImage,
     session: requests.Session | None = None,
     sleep=time.sleep,
 ) -> Image.Image:
-    """이미지를 받아온다. upload.wikimedia.org는 연속 요청에 429를 준다 — 물러섰다 다시 친다.
+    """이미지를 받아온다. upload.wikimedia.org는 연속 요청에 429 + Retry-After를 준다.
 
-    실제로 인물 4명을 연달아 등록하다 429를 맞았다. 발행은 하루 한 번이라 평시엔
-    안 걸리지만, 재시도 없이 두면 배치 작업이 중간에 죽는다.
+    짧은 대기면 물러섰다 다시 치고, 긴 차단(실측 600초)이면 기다리지 않고 실패시킨다.
+    발행은 하루 한 번이라 평시엔 안 걸린다 — 걸리는 건 대조표처럼 여러 장을 연달아
+    받을 때다.
     """
     caller = session or requests.Session()
     last: Exception | None = None
@@ -190,8 +210,14 @@ def download(
         try:
             response = caller.get(image.url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
             if response.status_code == 429:
+                wait = _retry_after(response)
+                if wait > MAX_WAIT_SECONDS:
+                    raise WikimediaError(
+                        f"공용이 {wait:.0f}초 차단을 걸었습니다 ({image.title}). "
+                        f"{wait / 60:.0f}분 뒤 다시 시도하십시오."
+                    )
                 last = WikimediaError(f"429 rate limit ({image.title})")
-                sleep(BACKOFF_SECONDS * (attempt + 1))
+                sleep(wait or BACKOFF_SECONDS * (attempt + 1))
                 continue
             response.raise_for_status()
             loaded = Image.open(BytesIO(response.content))
@@ -229,6 +255,7 @@ def contact_sheet(
     session: requests.Session | None = None,
     columns: int = 4,
     cell: int = 280,
+    limit: int = 8,
     sleep=time.sleep,
 ) -> Path:
     """후보들을 한 장에 붙여 저장한다 — 사람이 눈으로 고르라고.
@@ -237,9 +264,12 @@ def contact_sheet(
     상위에 올린다(실제로 머스크 검색 1등이 팬아트 그림이었다). 라이선스는 기계가
     판정할 수 있어도 "이게 그 사람 사진이 맞는가"는 기계가 판정하지 못한다.
     """
+    candidates = candidates[:limit]
     rows = (len(candidates) + columns - 1) // columns
     sheet = Image.new("RGB", (columns * cell, max(rows, 1) * cell), (24, 24, 28))
     for index, candidate in enumerate(candidates):
+        if index:
+            sleep(POLITE_DELAY)  # 몰아치면 10분 차단을 맞는다
         try:
             thumb = download(candidate, session=session, sleep=sleep)
         except WikimediaError:

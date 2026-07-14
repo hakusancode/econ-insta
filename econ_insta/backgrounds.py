@@ -1,11 +1,16 @@
-"""표지 배경 이미지: 인물 콜라주(큐레이션) 또는 Unsplash 주제 사진.
+"""표지 배경 이미지: 인물 콜라주(큐레이션) → Unsplash → 위키미디어 공용 순.
 
 인물 사진은 assets/people/에 라이선스 메타데이터(people.json)와 함께 큐레이션한다.
 퍼블릭 도메인·CC 라이선스만 쓰고, CC BY 사진의 크레딧은 캡션에 반드시 표기한다.
 합성은 나란히 배치하는 콜라주뿐이다 — 없던 장면을 만들어내는 편집은 하지 않는다.
 
-Unsplash는 UNSPLASH_ACCESS_KEY가 있어야 동작한다. 키가 없거나 검색이 실패하면
-None으로 폴백해 표지가 기존 단색 배경으로 나간다. 배경 때문에 발행이 죽으면 안 된다.
+주제 배경은 두 곳에서 찾는다. Unsplash는 UNSPLASH_ACCESS_KEY가 있어야 하고 사진이
+예쁘지만 뉴스성이 약하다. 위키미디어 공용은 키가 필요 없고 연준 청사·거래소처럼
+기사에 실제로 등장하는 대상이 잡힌다(`wikimedia.py`가 라이선스를 API로 판정한다).
+셋 다 실패하면 None으로 폴백해 표지가 단색 배경으로 나간다 — 배경 때문에 발행이
+죽으면 안 된다.
+
+신문기사 사진(연합·로이터·AP·게티)은 어떤 경로로도 쓰지 않는다.
 
 CLI:
     python -m econ_insta.backgrounds "semiconductor memory chips"   # 검색 시험
@@ -22,6 +27,7 @@ from pathlib import Path
 import requests
 from PIL import Image
 
+from . import wikimedia
 from .config import PROJECT_ROOT, _load_dotenv
 
 WIDTH, HEIGHT = 1080, 1350
@@ -155,6 +161,29 @@ def fetch_unsplash(query: str, session: requests.Session | None = None) -> Backg
     return Background(image=image.convert("RGB"), credits=(f"{photographer} on Unsplash",))
 
 
+# --- 위키미디어 공용 -------------------------------------------------------
+
+
+def fetch_wikimedia(query: str, session: requests.Session | None = None) -> Background | None:
+    """공용에서 재사용 가능한 주제 사진을 받아온다. 결과가 없으면 None.
+
+    라이선스 판정과 크레딧 문구는 wikimedia 모듈이 API 메타데이터로 만든다.
+    """
+    try:
+        results = wikimedia.search_images(query, session=session)
+        if not results:
+            return None
+        best = results[0]
+        image = wikimedia.download(best, session=session)
+    except wikimedia.WikimediaError as exc:
+        raise BackgroundError(str(exc)) from exc
+
+    return Background(
+        image=cover_crop(image, WIDTH, HEIGHT),
+        credits=(best.credit,),
+    )
+
+
 # --- 조합 ----------------------------------------------------------------
 
 
@@ -164,7 +193,7 @@ def build_background(
     session: requests.Session | None = None,
     errors: list[str] | None = None,
 ) -> Background | None:
-    """인물이 있으면 콜라주, 없으면 Unsplash, 그것도 안 되면 None(단색 폴백).
+    """인물 콜라주 → Unsplash → 위키미디어 공용 → None(단색 폴백).
 
     배경은 장식이므로 실패를 삼키고 errors에만 남긴다. 발행을 막지 않는다.
     """
@@ -175,12 +204,18 @@ def build_background(
             if errors is not None:
                 errors.append(f"인물 콜라주 실패: {exc}")
 
-    if bg_query:
+    if not bg_query:
+        return None
+
+    for source in (fetch_unsplash, fetch_wikimedia):
         try:
-            return fetch_unsplash(bg_query, session=session)
+            background = source(bg_query, session=session)
         except BackgroundError as exc:
             if errors is not None:
                 errors.append(str(exc))
+            continue
+        if background is not None:
+            return background
     return None
 
 
@@ -188,12 +223,14 @@ def main() -> int:
     import sys
 
     query = sys.argv[1] if len(sys.argv) > 1 else "stock market"
-    people = sorted(available_people())
-    print(f"인물 라이브러리: {people or '(비어 있음)'}")
+    print(f"인물 라이브러리: {sorted(available_people()) or '(비어 있음)'}")
 
-    background = fetch_unsplash(query)
+    errors: list[str] = []
+    background = build_background([], query, errors=errors)
+    for message in errors:
+        print(f"  ! {message}")
     if background is None:
-        print("Unsplash 결과 없음 — UNSPLASH_ACCESS_KEY가 .env에 있는지 확인하세요.")
+        print(f"'{query}': 배경을 찾지 못했습니다 → 단색 표지로 발행됩니다.")
         return 1
 
     out = PROJECT_ROOT / "out" / "_bg_preview.jpg"

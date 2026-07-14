@@ -75,8 +75,12 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
 - people: 글의 **중심에 있는** 인물이 아래 초상 라이브러리에 있을 때만 그 키를 넣으십시오
   (최대 2명, 대립·회담 구도면 2명). 스쳐 지나가는 언급이면 넣지 마십시오. 없으면 빈 배열.
   초상 라이브러리: {_PEOPLE_HINT}
-- bg_query: 표지 배경 사진을 찾을 영어 검색어 2~4단어 (예: "semiconductor memory chips").
-  인물을 쓰지 않을 때 이 검색어로 사진을 찾습니다. 항상 채우십시오.
+- bg_query: 표지 배경 사진을 찾을 영어 검색어 2~4단어. 인물을 쓰지 않을 때 이 검색어로
+  사진을 찾습니다. 항상 채우십시오.
+  **사진으로 찍을 수 있는 구체적 대상**을 쓰십시오 — 기관·건물·시설·장소가 가장 잘 잡힙니다
+  (예: "Federal Reserve building", "New York Stock Exchange", "semiconductor fabrication plant",
+  "container ship port", "Bank of Korea"). "inflation", "market anxiety" 같은 추상 개념은
+  검색이 실패하거나 엉뚱한 사진이 나옵니다.
 
 형식:
 - headline은 표지 제목, {HEADLINE_MAX}자 이내. 글의 핵심 통찰을 담으십시오.

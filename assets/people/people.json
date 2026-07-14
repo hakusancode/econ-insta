@@ -1,7 +1,11 @@
 {
   "trump": {
     "name": "도널드 트럼프",
-    "aliases": ["트럼프", "미국 대통령", "Trump"],
+    "aliases": [
+      "트럼프",
+      "미국 대통령",
+      "Trump"
+    ],
     "file": "trump.jpg",
     "credit": "White House / Daniel Torok (Public domain)",
     "source": "https://commons.wikimedia.org/wiki/File:Official_Presidential_Portrait_of_President_Donald_J._Trump_(2025).jpg",
@@ -9,10 +13,63 @@
   },
   "xi": {
     "name": "시진핑",
-    "aliases": ["시진핑", "중국 국가주석", "Xi Jinping"],
+    "aliases": [
+      "시진핑",
+      "중국 국가주석",
+      "Xi Jinping"
+    ],
     "file": "xi.jpg",
     "credit": "kremlin.ru (CC BY 4.0)",
     "source": "https://commons.wikimedia.org/wiki/File:Xi_Jinping_in_July_2024.jpg",
+    "license": "CC BY 4.0"
+  },
+  "powell": {
+    "name": "제롬 파월",
+    "aliases": [
+      "파월",
+      "연준 의장",
+      "Powell"
+    ],
+    "file": "powell.jpg",
+    "credit": "Federalreserve (Wikimedia Commons, Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Jerome_H._Powell,_Federal_Reserve_Chair.jpg",
+    "license": "Public domain"
+  },
+  "lagarde": {
+    "name": "크리스틴 라가르드",
+    "aliases": [
+      "라가르드",
+      "ECB 총재",
+      "Lagarde"
+    ],
+    "file": "lagarde.jpg",
+    "credit": "Français : Fonds monétaire international (identité du photographe non mentionnée) (Wikimedia Commons, Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Lagarde,_Christine_(official_portrait_2011).jpg",
+    "license": "Public domain"
+  },
+  "bessent": {
+    "name": "스콧 베선트",
+    "aliases": [
+      "베선트",
+      "미 재무장관",
+      "Bessent"
+    ],
+    "file": "bessent.jpg",
+    "credit": "U.S. Department of the Treasury (Wikimedia Commons, Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Official_portrait_of_Treasury_Secretary_Scott_Bessent_(borderless)_(cropped).jpg",
+    "license": "Public domain"
+  },
+  "jensen_huang": {
+    "name": "젠슨 황",
+    "aliases": [
+      "젠슨 황",
+      "황런쉰",
+      "Nvidia",
+      "엔비디아 CEO"
+    ],
+    "file": "jensen_huang.jpg",
+    "credit": "Photographer: Peter Dasilva (Wikimedia Commons, CC BY 4.0)",
+    "source": "https://commons.wikimedia.org/wiki/File:Jensen_Huang_(cropped)_(2024).jpg",
     "license": "CC BY 4.0"
   }
 }

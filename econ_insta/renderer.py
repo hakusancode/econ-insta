@@ -38,6 +38,95 @@ UP = (240, 88, 88)
 DOWN = (88, 148, 240)
 FLAT = MUTED
 
+Color = tuple[int, int, int]
+
+PHOTO_SCRIM = (10, 12, 20)
+"""사진 표지를 누르는 어두운 막. 테마가 밝아도 이건 어둡다 — 흰 제목이 읽혀야 하므로."""
+
+
+@dataclass(frozen=True)
+class Theme:
+    """카드의 색 체계.
+
+    디자인 시안을 HTML로 그리면 고른 뒤 렌더러로 '포팅'하는 숙제가 남는다(실제로 시안
+    4종을 올려두고 반영하지 못한 채 남았다). 테마를 렌더러 안에 두면 **시안이 곧 코드다** —
+    고르는 순간 DEFAULT_THEME만 바꾸면 끝난다.
+
+    등락 색(up/down)은 테마마다 다시 정하지 말 것: 한국 증시는 상승 빨강·하락 파랑이고
+    이건 취향이 아니라 관행이다.
+    """
+
+    name: str
+    bg: Color
+    bg_cover: Color
+    fg: Color
+    muted: Color
+    accent: Color
+    body: Color
+    rule: Color
+    up: Color = UP
+    down: Color = DOWN
+
+    @property
+    def flat(self) -> Color:
+        return self.muted
+
+    def change_color(self, change_pct: float) -> Color:
+        if change_pct > 0:
+            return self.up
+        if change_pct < 0:
+            return self.down
+        return self.flat
+
+
+DARK_AMBER = Theme(
+    name="다크 앰버 (현재)",
+    bg=BG,
+    bg_cover=BG_COVER,
+    fg=FG,
+    muted=MUTED,
+    accent=ACCENT,
+    body=(206, 212, 224),
+    rule=(42, 48, 62),
+)
+
+PAPER = Theme(
+    name="페이퍼 (신문)",
+    bg=(247, 245, 240),
+    bg_cover=(247, 245, 240),
+    fg=(24, 24, 26),
+    muted=(122, 120, 116),
+    accent=(196, 30, 58),
+    body=(58, 58, 62),
+    rule=(214, 210, 202),
+)
+
+MIDNIGHT = Theme(
+    name="미드나잇 (딥블루·시안)",
+    bg=(11, 22, 40),
+    bg_cover=(8, 16, 32),
+    fg=(233, 240, 250),
+    muted=(124, 146, 176),
+    accent=(72, 214, 214),
+    body=(196, 210, 228),
+    rule=(30, 48, 74),
+)
+
+MONO = Theme(
+    name="모노 (미니멀)",
+    bg=(18, 18, 18),
+    bg_cover=(12, 12, 12),
+    fg=(245, 245, 245),
+    muted=(130, 130, 130),
+    accent=(245, 245, 245),  # 액센트도 흰색 — 색 대신 선·여백으로 위계를 만든다
+    body=(190, 190, 190),
+    rule=(52, 52, 52),
+)
+
+THEMES = (DARK_AMBER, PAPER, MIDNIGHT, MONO)
+
+DEFAULT_THEME = DARK_AMBER
+
 JPEG_QUALITY = 92
 
 OUTPUT_ROOT = Path(os.environ.get("ECON_INSTA_OUT", PROJECT_ROOT / "out"))
@@ -167,7 +256,7 @@ def _canvas(color: tuple[int, int, int]) -> tuple[Image.Image, ImageDraw.ImageDr
     return image, ImageDraw.Draw(image)
 
 
-def _rule(draw: ImageDraw.ImageDraw, y: int, color=(42, 48, 62)) -> None:
+def _rule(draw: ImageDraw.ImageDraw, y: int, color: Color = DARK_AMBER.rule) -> None:
     draw.line([(MARGIN, y), (WIDTH - MARGIN, y)], fill=color, width=2)
 
 
@@ -197,19 +286,30 @@ def render_cover(
     fonts: FontSet,
     kicker: str = "데일리 경제 브리핑",
     background: Image.Image | None = None,
+    theme: Theme = DEFAULT_THEME,
 ) -> Image.Image:
     inner = WIDTH - MARGIN * 2
 
     if background is None:
-        image, draw = _canvas(BG_COVER)
+        image, draw = _canvas(theme.bg_cover)
     else:
         if background.size != (WIDTH, HEIGHT):
             raise RenderError(f"배경은 {WIDTH}×{HEIGHT}이어야 합니다 (받은 것: {background.size}).")
-        image = Image.composite(Image.new("RGB", (WIDTH, HEIGHT), BG_COVER), background.convert("RGB"), _photo_shade())
+        # 스크림은 **테마와 무관하게 어둡다.** 라이트 테마의 밝은 배경색으로 누르면
+        # 사진이 하얗게 뜨고 그 위의 흰 제목이 사라진다. 사진 표지 = 어두운 스크림 + 흰 글씨.
+        image = Image.composite(
+            Image.new("RGB", (WIDTH, HEIGHT), PHOTO_SCRIM),
+            background.convert("RGB"),
+            _photo_shade(),
+        )
         draw = ImageDraw.Draw(image)
 
-    draw.text((MARGIN, MARGIN), kicker, font=fonts.at(38, bold=True), fill=ACCENT)
-    draw.text((MARGIN, MARGIN + 62), f"{when:%Y년 %m월 %d일}", font=fonts.at(32), fill=MUTED)
+    # 사진 위에서는 어떤 테마든 흰 글씨여야 읽힌다(어두운 스크림으로 눌러둔 위에 얹으므로).
+    title_fill = FG if background is not None else theme.fg
+    sub_fill = MUTED if background is not None else theme.muted
+
+    draw.text((MARGIN, MARGIN), kicker, font=fonts.at(38, bold=True), fill=theme.accent)
+    draw.text((MARGIN, MARGIN + 62), f"{when:%Y년 %m월 %d일}", font=fonts.at(32), fill=sub_fill)
 
     title_font = fonts.at(84, bold=True)
     lines = wrap(headline, title_font, inner)
@@ -220,23 +320,27 @@ def render_cover(
         # 사진 위에서는 얼굴을 가리지 않도록 제목을 어둡게 눌린 하단에 앉힌다.
         top = HEIGHT - MARGIN - 110 - len(lines) * step
     for i, line in enumerate(lines):
-        draw.text((MARGIN, top + i * step), line, font=title_font, fill=FG)
+        draw.text((MARGIN, top + i * step), line, font=title_font, fill=title_fill)
 
-    draw.line([(MARGIN, top - 48), (MARGIN + 120, top - 48)], fill=ACCENT, width=6)
-    draw.text((MARGIN, HEIGHT - MARGIN - 40), "넘겨서 확인하세요 →", font=fonts.at(30), fill=MUTED)
+    draw.line([(MARGIN, top - 48), (MARGIN + 120, top - 48)], fill=theme.accent, width=6)
+    draw.text(
+        (MARGIN, HEIGHT - MARGIN - 40), "넘겨서 확인하세요 →", font=fonts.at(30), fill=sub_fill
+    )
     return image
 
 
-def render_card(card: Card, index: int, total: int, fonts: FontSet) -> Image.Image:
-    image, draw = _canvas(BG)
+def render_card(
+    card: Card, index: int, total: int, fonts: FontSet, theme: Theme = DEFAULT_THEME
+) -> Image.Image:
+    image, draw = _canvas(theme.bg)
     inner = WIDTH - MARGIN * 2
 
-    draw.text((MARGIN, MARGIN), f"{index:02d}", font=fonts.at(64, bold=True), fill=ACCENT)
+    draw.text((MARGIN, MARGIN), f"{index:02d}", font=fonts.at(64, bold=True), fill=theme.accent)
     draw.text(
         (WIDTH - MARGIN, MARGIN + 24),
         f"{index} / {total}",
         font=fonts.at(28),
-        fill=MUTED,
+        fill=theme.muted,
         anchor="ra",
     )
 
@@ -249,14 +353,19 @@ def render_card(card: Card, index: int, total: int, fonts: FontSet) -> Image.Ima
     field_top, field_bottom = MARGIN + 150, HEIGHT - MARGIN - 90
     top = max(field_top, field_top + (field_bottom - field_top - block) // 2)
 
-    top = _draw_block(draw, card.title, title_font, top=top, fill=FG, max_width=inner)
+    top = _draw_block(draw, card.title, title_font, top=top, fill=theme.fg, max_width=inner)
     top += gap
-    _rule(draw, top)
+    _rule(draw, top, theme.rule)
     top += gap
 
-    _draw_block(draw, card.body, body_font, top=top, fill=(206, 212, 224), max_width=inner)
+    _draw_block(draw, card.body, body_font, top=top, fill=theme.body, max_width=inner)
 
-    draw.text((MARGIN, HEIGHT - MARGIN - 36), f"출처 · {card.source}", font=fonts.at(28), fill=MUTED)
+    draw.text(
+        (MARGIN, HEIGHT - MARGIN - 36),
+        f"출처 · {card.source}",
+        font=fonts.at(28),
+        fill=theme.muted,
+    )
     return image
 
 
@@ -309,11 +418,13 @@ def _change_color(change_pct: float) -> tuple[int, int, int]:
     return FLAT
 
 
-def render_indicators(quotes, note: str, fonts: FontSet) -> Image.Image:
-    image, draw = _canvas(BG)
+def render_indicators(
+    quotes, note: str, fonts: FontSet, theme: Theme = DEFAULT_THEME
+) -> Image.Image:
+    image, draw = _canvas(theme.bg)
     inner = WIDTH - MARGIN * 2
 
-    draw.text((MARGIN, MARGIN), "오늘의 지표", font=fonts.at(58, bold=True), fill=ACCENT)
+    draw.text((MARGIN, MARGIN), "오늘의 지표", font=fonts.at(58, bold=True), fill=theme.accent)
 
     field_top, field_bottom = MARGIN + 160, HEIGHT - MARGIN
     layout = _indicator_layout(quotes, note, fonts, inner, field_bottom - field_top)
@@ -326,25 +437,33 @@ def render_indicators(quotes, note: str, fonts: FontSet) -> Image.Image:
     top = max(field_top, field_top + (field_bottom - field_top - layout.height) // 2)
 
     for quote in quotes:
-        draw.text((MARGIN, top), quote.name, font=name_font, fill=FG)
-        draw.text((WIDTH - MARGIN, top), quote.price_text, font=price_font, fill=FG, anchor="ra")
+        draw.text((MARGIN, top), quote.name, font=name_font, fill=theme.fg)
+        draw.text(
+            (WIDTH - MARGIN, top), quote.price_text, font=price_font, fill=theme.fg, anchor="ra"
+        )
         draw.text(
             (WIDTH - MARGIN, top + int(layout.row_height * 0.44)),
             quote.change_text,
             font=change_font,
-            fill=_change_color(quote.change_pct),
+            fill=theme.change_color(quote.change_pct),
             anchor="ra",
         )
         top += layout.row_height
-        _rule(draw, top - 22)
+        _rule(draw, top - 22, theme.rule)
 
     if note:
-        _draw_block(draw, note, note_font, top=top + NOTE_GAP, fill=(206, 212, 224), max_width=inner)
+        _draw_block(draw, note, note_font, top=top + NOTE_GAP, fill=theme.body, max_width=inner)
 
     return image
 
 
-def render(briefing: Briefing, when: datetime, out_dir: Path | None = None, fonts: FontSet | None = None) -> list[Path]:
+def render(
+    briefing: Briefing,
+    when: datetime,
+    out_dir: Path | None = None,
+    fonts: FontSet | None = None,
+    theme: Theme = DEFAULT_THEME,
+) -> list[Path]:
     """카드 이미지를 순서대로 저장하고 경로 목록을 반환한다."""
     if not briefing.cards:
         raise RenderError("렌더할 카드가 없습니다.")
@@ -354,10 +473,12 @@ def render(briefing: Briefing, when: datetime, out_dir: Path | None = None, font
     target.mkdir(parents=True, exist_ok=True)
 
     total = len(briefing.cards)
-    images = [render_cover(briefing.headline, when, fonts)]
-    images += [render_card(c, i, total, fonts) for i, c in enumerate(briefing.cards, 1)]
+    images = [render_cover(briefing.headline, when, fonts, theme=theme)]
+    images += [render_card(c, i, total, fonts, theme=theme) for i, c in enumerate(briefing.cards, 1)]
     if briefing.quotes:
-        images.append(render_indicators(briefing.quotes, briefing.indicator_note, fonts))
+        images.append(
+            render_indicators(briefing.quotes, briefing.indicator_note, fonts, theme=theme)
+        )
 
     if len(images) > 10:
         raise RenderError(f"캐러셀 한도는 10장인데 {len(images)}장이 만들어졌습니다.")

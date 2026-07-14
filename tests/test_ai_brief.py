@@ -7,8 +7,36 @@
 import unittest
 from datetime import datetime
 
-from econ_insta.ai_brief import AIBriefing, build_caption, filter_hashtags
+from econ_insta.ai_brief import AI_TOPIC, AIBriefing, build_caption, filter_hashtags
 from econ_insta.summarizer import Card
+
+
+class TopicFilterTest(unittest.TestCase):
+    """`AI`를 대소문자 무시로 두면 said·remains 속의 'ai'에 걸린다 — 실제로 걸렸다."""
+
+    def test_영어_단어_속_ai는_잡지_않는다(self):
+        for text in [
+            "Jim Cramer says tech remains the best place",
+            "The eBay Scandal Gets a Thriller-Like Documentary",
+            "Taiwan chipmaker starts mass production",
+            "The report is available now",
+        ]:
+            self.assertIsNone(AI_TOPIC.search(text), text)
+
+    def test_진짜_AI_기사는_잡는다(self):
+        for text in [
+            "OpenAI Is Showing Odds in ChatGPT",
+            "New York Set to Ban Large New Data Centers",
+            "AI 주권, 추론은 국산 NPU로",
+            "인공지능 초과이익 특별세 논의",
+            "What Anthropic's latest discovery shows",
+            "엔비디아 신형 칩 공개",
+        ]:
+            self.assertIsNotNone(AI_TOPIC.search(text), text)
+
+    def test_약어는_단어일_때만_잡는다(self):
+        self.assertIsNotNone(AI_TOPIC.search("LLM 성능 비교"))
+        self.assertIsNone(AI_TOPIC.search("allmighty"))
 
 SOURCE = """오늘: 2026-07-14
 

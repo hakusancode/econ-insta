@@ -38,10 +38,21 @@ class FeedSpec:
     quota: int = 5
     """한 매체가 브리핑을 독식하지 않도록 매체별 상한을 둔다."""
 
+    topic: re.Pattern[str] | None = None
+    """주제 필터. 지정하면 제목·요약이 이 패턴에 맞는 기사만 남긴다.
+
+    주류 매체에는 AI 전용 섹션이 없다(연합 산업, 한경 IT는 AI가 아닌 기사가 훨씬 많다).
+    **쿼터를 적용하기 전에** 걸러야 한다 — 나중에 거르면 쿼터가 비AI 기사로 다 차버려
+    AI 기사가 한 건도 안 남는다.
+    """
+
 
 # 주의: WSJ의 옛 주소(feeds.a.dj.com)는 HTTP 200을 주지만 2025-01에 갱신이 멈춘 죽은 피드다.
 # 살아 있는 것은 feeds.content.dowjones.io 쪽이다.
 FEEDS: dict[str, FeedSpec] = {
+    # 연합뉴스는 한때 제외했으나 사용자 지시로 복귀(2026-07-14). 앞으로 빼지 말 것.
+    # 경제 섹션은 economy.xml이고 본문(description)이 온다 — 한경과 달리 카드 소재가 된다.
+    "연합뉴스": FeedSpec("https://www.yna.co.kr/rss/economy.xml", quota=4),
     "한국경제": FeedSpec("https://www.hankyung.com/feed/economy"),
     "매일경제": FeedSpec("https://www.mk.co.kr/rss/30100041/"),
     "WSJ": FeedSpec(
@@ -346,7 +357,10 @@ def collect_articles(
             errors.append(str(exc))
             continue
         cutoff = now - timedelta(hours=spec.max_age_hours)
-        gathered.extend(a for a in fetched if a.published >= cutoff)
+        fresh = [a for a in fetched if a.published >= cutoff]
+        if spec.topic is not None:
+            fresh = [a for a in fresh if spec.topic.search(f"{a.title} {a.summary}")]
+        gathered.extend(fresh)
 
     gathered.sort(key=lambda a: a.published, reverse=True)
     return apply_quota(dedupe(gathered), specs)[:limit]

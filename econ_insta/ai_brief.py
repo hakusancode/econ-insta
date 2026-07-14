@@ -38,29 +38,64 @@ MIN_CARDS, MAX_CARDS = 3, 5
 MAX_HASHTAGS = 6
 HEADLINE_MAX, CARD_TITLE_MAX, CARD_BODY_MAX = 28, 34, 150
 
-# 실측(2026-07-14)으로 살아 있는 것만 남겼다.
-# - VentureBeat AI(venturebeat.com/category/ai/feed/)는 200을 주지만 **55일째 갱신이 없는 죽은
-#   피드**다. 넣지 말 것.
-# - AI타임스는 pubDate가 '2026-07-14 15:53:25'(RFC822 아님)라 파서를 고쳐야 읽힌다.
-# - The Verge는 RSS가 아니라 Atom이다.
+# AI 관련 기사만 골라내는 패턴. 주류 매체에는 AI 전용 섹션이 없어서(연합 산업·한경 IT는
+# AI가 아닌 기사가 훨씬 많다) FeedSpec.topic으로 걸러야 한다.
+#
+# **영문 약어에는 반드시 단어 경계를 건다.** `AI`를 대소문자 무시로 그냥 두면 said·remains·
+# available·Taiwan 속의 "ai"에 걸린다. 실제로 그래서 NYT의 'eBay Scandal Documentary'와
+# CNBC의 'Jim Cramer says tech…'가 AI 기사로 잡혔다. 같은 이유로 LLM·GPT·AGI·HBM도 묶는다.
+_ACRONYMS = r"AI|A\.I\.|LLM|AGI|HBM|GPT-?\d?"
+AI_TOPIC = re.compile(
+    rf"(?:(?<![A-Za-z])(?:{_ACRONYMS})(?![A-Za-z])"
+    r"|인공지능|생성형|초거대|파운데이션 ?모델|챗GPT|오픈AI|앤스로픽|클로드"
+    r"|제미나이|코파일럿|딥시크|머신러닝|딥러닝|엔비디아|데이터센터|휴머노이드|자율주행"
+    r"|ChatGPT|OpenAI|Anthropic|Claude|Gemini|Copilot|DeepSeek|Llama"
+    r"|machine learning|neural network|Nvidia|data cent(?:er|re)|humanoid|robotaxi)",
+    re.IGNORECASE,
+)
+
+# 실측(2026-07-14)으로 살아 있고 신뢰할 만한 것만 남겼다.
+#
+# 뺀 것과 이유:
+# - **AI타임스**: 사용자 판단으로 제외. 단일 매체에 기대다 보니 출처·기사 질이 떨어졌다.
+# - **VentureBeat AI**: 200을 주지만 55일째 갱신이 없는 **죽은 피드**.
+# - **연합뉴스 `rss/it.xml`, `rss/science.xml`은 404.** 살아 있는 건 `industry.xml`이고
+#   119건 전부 본문이 온다. 다만 AI 전용이 아니라 topic 필터가 필수다.
+# - 매경 IT 섹션은 403을 자주 준다(UA 차단). 기업 섹션이 더 안정적이다.
+#
+# 알아둘 것: **한국경제는 item에 description이 없다** → 제목만 온다. 카드 본문 소재로는
+# 약하므로 쿼터를 낮게 둔다.
 AI_FEEDS: dict[str, FeedSpec] = {
-    "AI타임스": FeedSpec("https://www.aitimes.com/rss/allArticle.xml", quota=4),
-    "TechCrunch": FeedSpec(
-        "https://techcrunch.com/category/artificial-intelligence/feed/",
+    "연합뉴스": FeedSpec(
+        "https://www.yna.co.kr/rss/industry.xml", quota=3, topic=AI_TOPIC
+    ),
+    "매일경제": FeedSpec("https://www.mk.co.kr/rss/30000001/", quota=2, topic=AI_TOPIC),
+    "한국경제": FeedSpec("https://www.hankyung.com/feed/it", quota=2, topic=AI_TOPIC),
+    "WSJ": FeedSpec(
+        "https://feeds.content.dowjones.io/public/rss/RSSWSJD",
         language="en",
         quota=3,
+        topic=AI_TOPIC,
     ),
-    "The Verge": FeedSpec(
-        "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+    "CNBC": FeedSpec(
+        "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910",
         language="en",
-        max_age_hours=72,
         quota=2,
+        topic=AI_TOPIC,
+    ),
+    "The New York Times": FeedSpec(
+        "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+        language="en",
+        max_age_hours=48,
+        quota=2,
+        topic=AI_TOPIC,
     ),
     "MIT Technology Review": FeedSpec(
         "https://www.technologyreview.com/feed/",
         language="en",
         max_age_hours=72,
         quota=2,
+        topic=AI_TOPIC,
     ),
 }
 

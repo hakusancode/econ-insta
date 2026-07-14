@@ -171,11 +171,42 @@ def _rule(draw: ImageDraw.ImageDraw, y: int, color=(42, 48, 62)) -> None:
     draw.line([(MARGIN, y), (WIDTH - MARGIN, y)], fill=color, width=2)
 
 
+def _photo_shade() -> Image.Image:
+    """사진 배경용 세로 그라디언트 마스크. 값이 클수록 어둡게 눌린다.
+
+    위쪽(머리말 자리)은 중간쯤, 가운데(얼굴 자리)는 살짝만, 아래쪽(제목 자리)은
+    진하게 눌러 흰 글씨가 어떤 사진 위에서도 읽히게 한다.
+    """
+    column = []
+    for y in range(HEIGHT):
+        if y < 320:
+            alpha = 150 - int(90 * y / 320)
+        elif y < 640:
+            alpha = 60
+        else:
+            alpha = 60 + int(175 * (y - 640) / (HEIGHT - 640))
+        column.append(alpha)
+    mask = Image.new("L", (1, HEIGHT))
+    mask.putdata(column)
+    return mask.resize((WIDTH, HEIGHT))
+
+
 def render_cover(
-    headline: str, when: datetime, fonts: FontSet, kicker: str = "데일리 경제 브리핑"
+    headline: str,
+    when: datetime,
+    fonts: FontSet,
+    kicker: str = "데일리 경제 브리핑",
+    background: Image.Image | None = None,
 ) -> Image.Image:
-    image, draw = _canvas(BG_COVER)
     inner = WIDTH - MARGIN * 2
+
+    if background is None:
+        image, draw = _canvas(BG_COVER)
+    else:
+        if background.size != (WIDTH, HEIGHT):
+            raise RenderError(f"배경은 {WIDTH}×{HEIGHT}이어야 합니다 (받은 것: {background.size}).")
+        image = Image.composite(Image.new("RGB", (WIDTH, HEIGHT), BG_COVER), background.convert("RGB"), _photo_shade())
+        draw = ImageDraw.Draw(image)
 
     draw.text((MARGIN, MARGIN), kicker, font=fonts.at(38, bold=True), fill=ACCENT)
     draw.text((MARGIN, MARGIN + 62), f"{when:%Y년 %m월 %d일}", font=fonts.at(32), fill=MUTED)
@@ -183,7 +214,11 @@ def render_cover(
     title_font = fonts.at(84, bold=True)
     lines = wrap(headline, title_font, inner)
     step = _line_height(title_font)
-    top = (HEIGHT - len(lines) * step) // 2
+    if background is None:
+        top = (HEIGHT - len(lines) * step) // 2
+    else:
+        # 사진 위에서는 얼굴을 가리지 않도록 제목을 어둡게 눌린 하단에 앉힌다.
+        top = HEIGHT - MARGIN - 110 - len(lines) * step
     for i, line in enumerate(lines):
         draw.text((MARGIN, top + i * step), line, font=title_font, fill=FG)
 

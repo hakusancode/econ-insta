@@ -1,0 +1,18 @@
+{
+  "trump": {
+    "name": "도널드 트럼프",
+    "aliases": ["트럼프", "미국 대통령", "Trump"],
+    "file": "trump.jpg",
+    "credit": "White House / Daniel Torok (Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Official_Presidential_Portrait_of_President_Donald_J._Trump_(2025).jpg",
+    "license": "Public domain (US federal government work)"
+  },
+  "xi": {
+    "name": "시진핑",
+    "aliases": ["시진핑", "중국 국가주석", "Xi Jinping"],
+    "file": "xi.jpg",
+    "credit": "kremlin.ru (CC BY 4.0)",
+    "source": "https://commons.wikimedia.org/wiki/File:Xi_Jinping_in_July_2024.jpg",
+    "license": "CC BY 4.0"
+  }
+}

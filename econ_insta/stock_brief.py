@@ -75,10 +75,22 @@ class Series:
     closes: list[float]
     dates: list[datetime]
     currency: str = "원"
+    intraday: bool = False
+    """마지막 값이 아직 확정되지 않은 장중 가격인가.
+
+    **장중인데 '종가'라고 쓰면 거짓말이다.** yfinance는 장중에도 오늘 행을 돌려주는데,
+    그 값은 종가가 아니라 현재가다. 실제로 이 구분을 놓쳐 '종가'라고 박힌 카드를
+    발행했다. 호출부가 시장 시간을 확인해서 이 값을 넘겨야 한다.
+    """
 
     @property
     def last(self) -> float:
         return self.closes[-1]
+
+    @property
+    def basis(self) -> str:
+        """'종가' 또는 '현재가'. 카드·캡션 문구는 반드시 이걸 쓴다."""
+        return "현재가" if self.intraday else "종가"
 
     def change_pct(self, sessions: int) -> float | None:
         """N거래일 전 대비 등락률. 데이터가 모자라면 None."""
@@ -195,9 +207,10 @@ def render_chart(series: Series, fonts: FontSet, when: datetime) -> Image.Image:
             anchor="ma",
         )
 
+    basis = f"장중 {series.basis}" if series.intraday else f"{series.basis} 기준"
     draw.text(
         (WIDTH - MARGIN, HEIGHT - MARGIN - 36),
-        f"자료 · 종가 기준 ({when:%Y.%m.%d})",
+        f"자료 · {basis} ({when:%Y.%m.%d})",
         font=fonts.at(28),
         fill=MUTED,
         anchor="ra",
@@ -283,7 +296,8 @@ def build_caption(brief: StockBrief, when: datetime, credits: tuple[str, ...] = 
     lines = [
         brief.caption_hook,
         "",
-        f"{series.name} ({series.ticker}) · {when:%Y.%m.%d} 종가 {series.last:,.0f}{series.currency}",
+        f"{series.name} ({series.ticker}) · {when:%Y.%m.%d} "
+        f"{'장중 ' if series.intraday else ''}{series.basis} {series.last:,.0f}{series.currency}",
         f"1주 {_fmt_pct(series.change_pct(5))} / 1개월 {_fmt_pct(series.change_pct(21))} / "
         f"3개월 {_fmt_pct(series.change_pct(len(series.closes) - 1))}",
         "",

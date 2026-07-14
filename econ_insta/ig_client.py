@@ -27,6 +27,9 @@ CAROUSEL_MAX_ITEMS = 10
 POLL_INTERVAL_SECONDS = 3
 POLL_TIMEOUT_SECONDS = 180
 
+# 영상은 인스타 쪽 트랜스코딩이 필요해 이미지보다 오래 걸린다.
+REEL_POLL_TIMEOUT_SECONDS = 600
+
 
 class InstagramError(RuntimeError):
     """Graph API 호출 실패."""
@@ -165,6 +168,52 @@ class InstagramClient:
             return self._call("GET", media_id, fields="permalink").get("permalink")
         except InstagramError:
             return None
+
+    def create_reel_container(
+        self,
+        video_url: str,
+        caption: str,
+        cover_url: str | None = None,
+        share_to_feed: bool = True,
+    ) -> str:
+        """릴스 컨테이너를 만든다. media_type=REELS 이고 video_url을 받는다.
+
+        cover_url을 주면 그 이미지가 썸네일이 된다(thumb_offset보다 우선한다).
+        """
+        validate_caption(caption)
+        params: dict[str, str] = {
+            "media_type": "REELS",
+            "video_url": video_url,
+            "caption": caption,
+            "share_to_feed": "true" if share_to_feed else "false",
+        }
+        if cover_url:
+            params["cover_url"] = cover_url
+        return str(self._call("POST", f"{self.user_id}/media", **params)["id"])
+
+    def publish_reel(
+        self,
+        video_url: str,
+        caption: str,
+        cover_url: str | None = None,
+        share_to_feed: bool = True,
+        timeout: float = REEL_POLL_TIMEOUT_SECONDS,
+    ) -> PublishResult:
+        """릴스를 발행한다.
+
+        영상은 인스타 쪽 트랜스코딩이 필요해 이미지보다 오래 걸린다 — 폴링 한도를
+        따로 둔다(이미지 기준으로 두면 아직 IN_PROGRESS인데 포기한다).
+        """
+        container_id = self.create_reel_container(
+            video_url, caption, cover_url=cover_url, share_to_feed=share_to_feed
+        )
+        self.wait_for_container(container_id, timeout=timeout)
+        media_id = self.publish_container(container_id)
+        return PublishResult(
+            media_id=media_id,
+            container_id=container_id,
+            permalink=self.permalink(media_id),
+        )
 
     def publish_images(
         self,

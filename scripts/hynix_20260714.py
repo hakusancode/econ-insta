@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 import yfinance as yf
@@ -23,6 +23,16 @@ WHEN = datetime(2026, 7, 14)
 OUT = PROJECT_ROOT / "out" / "2026-07-14-hynix"
 
 
+KST = timezone(timedelta(hours=9))
+MARKET_CLOSE = time(15, 30)  # KRX 정규장 마감
+
+
+def is_intraday(now: datetime | None = None) -> bool:
+    """지금 KRX 정규장이 열려 있나. 열려 있으면 마지막 값은 종가가 아니라 현재가다."""
+    now = now or datetime.now(KST)
+    return now.weekday() < 5 and now.time() < MARKET_CLOSE
+
+
 def load_series() -> Series:
     # auto_adjust=False: 기본값(True)은 배당을 반영해 과거 종가를 조정하므로
     # 카드에 '저 1,102,816원' 같은 실제로 존재한 적 없는 가격이 찍힌다.
@@ -31,7 +41,13 @@ def load_series() -> Series:
         raise SystemExit("주가 데이터를 받지 못했습니다.")
     closes = [float(v) for v in history["Close"]]
     dates = [d.to_pydatetime() for d in history.index]
-    return Series(name="SK하이닉스", ticker=TICKER, closes=closes, dates=dates)
+    return Series(
+        name="SK하이닉스",
+        ticker=TICKER,
+        closes=closes,
+        dates=dates,
+        intraday=is_intraday(),
+    )
 
 
 REASONS = [

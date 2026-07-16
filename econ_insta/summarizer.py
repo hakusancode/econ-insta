@@ -42,6 +42,7 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
 
 만드는 법:
 - **가장 화제성이 큰 이슈 하나**를 고르십시오(대개 첫 번째 후보). 그 이슈 하나만 다룹니다.
+- 고른 이슈의 번호를 `issue_index`에 넣으십시오(프롬프트의 `[이슈 N]`의 N). 표지 사진을 그 이슈의 기사에서 찾기 때문에, 번호가 틀리면 표지에 엉뚱한 사진이 깔립니다.
 - **여러 이슈를 한 게시물에 섞지 마십시오.** 표지와 모든 카드가 같은 사건이어야 합니다.
 - 고른 이슈에 묶인 기사들을 재료로, 표지=훅 한 문장, 카드=서사로 풀어냅니다:
   · 카드1 무슨 일: 핵심 사실(무엇이·얼마나)
@@ -83,6 +84,7 @@ SCHEMA = {
     "properties": {
         "headline": {"type": "string", "description": "표지 카드 제목"},
         "indicator_note": {"type": "string", "description": "지표 카드에 얹을 한 문장 코멘트"},
+        "issue_index": {"type": "integer", "description": "당신이 고른 이슈의 번호(프롬프트의 [이슈 N])"},
         "cards": {
             "type": "array",
             "items": {
@@ -98,7 +100,7 @@ SCHEMA = {
             },
         },
     },
-    "required": ["headline", "indicator_note", "cards"],
+    "required": ["headline", "indicator_note", "issue_index", "cards"],
     "additionalProperties": False,
 }
 
@@ -122,6 +124,8 @@ class Briefing:
     indicator_note: str
     cards: list[Card]
     quotes: list[Quote]
+    issue: Issue | None = None
+    """모델이 고른 이슈. None이면 표지 사진을 조달할 대상이 없어 그래픽으로 나간다."""
     input_tokens: int = 0
     output_tokens: int = 0
     dropped_cards: int = 0
@@ -226,6 +230,22 @@ def _describe(problems: dict[str, list[str]]) -> str:
     return "\n".join(lines)
 
 
+def _chosen_issue(payload: dict, issues: list[Issue]) -> Issue | None:
+    """모델이 고른 이슈. 번호가 없거나 범위 밖이면 None(표지는 그래픽으로 저하).
+
+    issues[0]으로 폴백하지 않는다 — 모델의 선택과 갈리는 것이 바로 이 필드가 생긴 이유다.
+    2026-07-16 실측: 모델은 코스피를 골랐는데 rank_issues()[0]은 광고성 리스티클이었다.
+
+    payload["issue_index"]가 아니라 .get()인 것도 의도적이다. 스키마 required가
+    보장하지만, 만에 하나 없을 때 KeyError로 발행을 죽이는 건 장식 하나 때문에
+    게시물을 버리는 것이다. 없음·범위밖·타입이상을 전부 같은 저하 경로로 모은다.
+    """
+    index = payload.get("issue_index")
+    if not isinstance(index, int) or not 1 <= index <= len(issues):
+        return None
+    return issues[index - 1]
+
+
 def _generate(caller, model: str, prompt: str) -> tuple[dict, int, int]:
     response = caller.messages.create(
         model=model,
@@ -302,6 +322,7 @@ def summarize(
         indicator_note=payload["indicator_note"],
         cards=cards,
         quotes=brief.quotes,
+        issue=_chosen_issue(payload, issues),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         dropped_cards=len(dropped),

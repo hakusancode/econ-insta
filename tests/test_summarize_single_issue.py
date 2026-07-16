@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from econ_insta.collector import KST, Article, DailyBrief, Quote
 from econ_insta.issues import rank_issues
-from econ_insta.summarizer import summarize, build_prompt
+from econ_insta.summarizer import summarize, build_prompt, SCHEMA
 
 
 def art(title, source, summary=""):
@@ -47,6 +47,19 @@ PAYLOAD = {
         {"title": "무슨 일", "body": "삼성전자가 어닝 쇼크를 냈다.", "source": "연합뉴스", "role": "무슨 일"},
         {"title": "왜", "body": "메모리 가격 급락이 원인으로 지목됐다.", "source": "매일경제", "role": "왜"},
         {"title": "앞으로", "body": "업계는 감산 여부를 주시하고 있다.", "source": "한국경제", "role": "앞으로"},
+    ],
+}
+
+
+# [이슈 2] = 한은 기준금리(1매체). 트랩 테스트용 — 번호가 1이 아니어야 issues[0] 뮤테이션이 잡힌다.
+RATE_PAYLOAD = {
+    "headline": "금리 동결, 시장은 숨을 골랐다",
+    "indicator_note": "관망세가 지표에 묻어났다",
+    "issue_index": 2,
+    "cards": [
+        {"title": "무슨 일", "body": "한국은행이 기준금리를 동결했다.", "source": "한국경제", "role": "무슨 일"},
+        {"title": "왜", "body": "물가 둔화와 경기 부진을 함께 고려했다.", "source": "한국경제", "role": "왜"},
+        {"title": "앞으로", "body": "시장은 다음 회의의 신호를 기다린다.", "source": "한국경제", "role": "앞으로"},
     ],
 }
 
@@ -94,6 +107,45 @@ class SummarizeSingleIssueTest(unittest.TestCase):
         prompt = build_prompt(brief, 금리만)
         self.assertIn("기준금리", prompt)
         self.assertNotIn("삼성전자", prompt)
+
+
+class IssueContractTest(unittest.TestCase):
+    """모델이 고른 이슈가 Briefing에 실려 나오는가 (스펙 2026-07-17-issue-contract-design.md)."""
+
+    def test_모델이_고른_이슈가_briefing에_실린다(self):
+        """트랩: 모델이 2번을 고르면 2번이 나와야 한다.
+
+        issues[0]으로 폴백하는 뮤테이션이 여기서 FAIL한다. issue_index=1로
+        짜면 버그 코드로도 통과하므로 반드시 1이 아닌 번호를 쓴다.
+        """
+        brief = sample_brief()
+        self.assertGreaterEqual(len(rank_issues(brief.articles)), 2)   # 픽스처 방어
+
+        briefing = summarize(brief, client=FakeClient(RATE_PAYLOAD))
+
+        self.assertIsNotNone(briefing.issue)
+        # 객체 동일성이 아니라 내용으로 단언한다 — 테스트가 rank_issues를
+        # 다시 부르면 summarize 안의 것과 다른 객체가 나온다.
+        self.assertEqual(briefing.issue.articles[0].title, "한은 기준금리 동결")
+
+    def test_범위밖_번호면_이슈없이_발행된다(self):
+        """카드는 살아서 나간다 — 배경 조달의 문제이지 콘텐츠의 문제가 아니다."""
+        for bad in (99, 0, -1):
+            with self.subTest(issue_index=bad):
+                briefing = summarize(sample_brief(), client=FakeClient({**PAYLOAD, "issue_index": bad}))
+                self.assertIsNone(briefing.issue)
+                self.assertEqual(len(briefing.cards), 3)
+
+    def test_번호가_없거나_타입이_이상해도_발행된다(self):
+        for bad in ({**PAYLOAD}, {**PAYLOAD, "issue_index": "2"}, {**PAYLOAD, "issue_index": None}):
+            with self.subTest(issue_index=bad.get("issue_index", "(없음)")):
+                briefing = summarize(sample_brief(), client=FakeClient(bad))
+                self.assertIsNone(briefing.issue)
+                self.assertEqual(len(briefing.cards), 3)
+
+    def test_스키마에_issue_index가_필수다(self):
+        self.assertEqual(SCHEMA["properties"]["issue_index"]["type"], "integer")
+        self.assertIn("issue_index", SCHEMA["required"])
 
 
 if __name__ == "__main__":

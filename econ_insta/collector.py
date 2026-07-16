@@ -121,6 +121,8 @@ class Quote:
     name: str
     price: float
     change_pct: float
+    series: list[float] | None = None
+    """스파크라인용 최근 종가 시계열. 수집 실패 시 None(발행을 막지 않는다)."""
 
     @property
     def price_text(self) -> str:
@@ -375,8 +377,10 @@ def collect_quotes(
 
     symbols = tickers or TICKERS
     try:
+        # period는 등락률 계산용 5일이 아니라 스파크라인용 시계열까지 커버해야 한다.
+        # 20~30개 종가를 확보하려면 주말·휴장일을 감안해 달력일 기준 2개월 정도 필요하다.
         frame = yfinance.download(
-            list(symbols), period="5d", interval="1d", progress=False, auto_adjust=False
+            list(symbols), period="2mo", interval="1d", progress=False, auto_adjust=False
         )
     except Exception as exc:  # yfinance는 예외 종류를 보장하지 않는다
         raise CollectError(f"지표 조회 실패 ({exc})") from exc
@@ -388,20 +392,34 @@ def collect_quotes(
     quotes: list[Quote] = []
     for symbol, name in symbols.items():
         try:
-            series = closes[symbol].dropna()
-            if len(series) < 2:
-                raise ValueError(f"표본 부족 ({len(series)}일)")
-            last, prev = float(series.iloc[-1]), float(series.iloc[-2])
+            history = closes[symbol].dropna()
+            if len(history) < 2:
+                raise ValueError(f"표본 부족 ({len(history)}일)")
+            last, prev = float(history.iloc[-1]), float(history.iloc[-2])
             if prev == 0:
                 raise ValueError("전일 종가가 0")
-            quotes.append(
-                Quote(symbol=symbol, name=name, price=last, change_pct=(last - prev) / prev * 100)
-            )
         except (KeyError, IndexError, ValueError) as exc:
             message = f"{name}({symbol}) 건너뜀: {exc}"
             if errors is None:
                 raise CollectError(message) from exc
             errors.append(message)
+            continue
+
+        # 스파크라인 시계열은 부가 정보다 — 만들다 실패해도 등락률 발행 자체는 막지 않는다.
+        try:
+            series = [float(v) for v in history.iloc[-30:]]
+        except (TypeError, ValueError):
+            series = None
+
+        quotes.append(
+            Quote(
+                symbol=symbol,
+                name=name,
+                price=last,
+                change_pct=(last - prev) / prev * 100,
+                series=series,
+            )
+        )
     return quotes
 
 

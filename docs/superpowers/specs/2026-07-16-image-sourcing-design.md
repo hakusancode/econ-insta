@@ -53,12 +53,21 @@ collector.py    RSS/Atom → Article(+ images: list[str])      ← 신규 필드
      ↓
 issues.py       Article[] → Issue[]  (크로스소스 랭킹 — 3단계a 완료, 수정 없음)
      ↓
-photos.py       Issue → 후보 수집 → 기계 필터 → Claude 비전 선택   ← 신규 모듈
+summarizer.py   Issue[] → 프롬프트 → 모델이 하나 고름 → Briefing.issue   ← 이슈 계약(2026-07-17)
      ↓
-backgrounds.py  build_background(): 기사 사진 → 인물 → 위키미디어 → Unsplash → None
+photos.py       briefing.issue → 후보 수집 → 기계 필터 → Claude 비전 선택   ← 신규 모듈
+     ↓
+backgrounds.py  build_background(issue=briefing.issue): 기사 사진 → 인물 → 위키미디어 → Unsplash → None
      ↓
 renderer.py     render(background=...) → render_cover(background=...)  ← render()에 통로 추가
 ```
+
+**`summarizer.py` 줄은 2026-07-17에 추가됐다.** 원래 이 스펙은 `issues.py → photos.py`로 바로 이었고,
+`photos.pick(issue)`의 `issue`를 **누가 아는가**를 정하지 않았다. 호출부가 안다고 가정했으나 호출부는
+알 수 없었다 — 모델이 프롬프트 안에서 이슈를 고르는데 그 선택이 `Briefing`에 실리지 않았기 때문이다.
+그래서 호출부가 `rank_issues()[0]`을 따로 불러 **모델의 선택과 갈렸다.** 4단계 6개 태스크가 리뷰
+클린으로 닫히고 299개 테스트가 통과한 뒤에도 실전에서 안 걸린 이유다.
+설계·실측·수정: `docs/superpowers/specs/2026-07-17-issue-contract-design.md`.
 
 **`renderer.render()`에 배경 통로가 없다 (코드 확인함).** 814행이 `render_cover(briefing.headline,
 when, fonts, theme=theme)` — `background`를 안 넘긴다. `render_cover` 자체는 2단계에서 사진 경로를
@@ -98,6 +107,11 @@ RSS·Atom 두 생성 지점에서 `media:content` / `media:thumbnail` / `enclosu
 기본값이 있는 필드라 **기존 `Article(...)` 호출부는 전부 그대로 돌아간다**(3단계a 테스트 포함).
 
 ## 5. `photos.py`
+
+**`pick(issue)`의 `issue`는 `briefing.issue`다 — `rank_issues()[0]`이 아니다.**
+모델이 프롬프트에서 고른 그 이슈여야 한다. 다시 랭킹해서 1위를 집으면 모델의 선택과 갈린다
+(2026-07-16 실측: 모델=코스피, `rank_issues()[0]`=광고성 리스티클).
+계약은 `docs/superpowers/specs/2026-07-17-issue-contract-design.md` §4.
 
 ### 5.1 후보 수집
 

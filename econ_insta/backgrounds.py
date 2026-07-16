@@ -1,16 +1,20 @@
-"""표지 배경 이미지: 인물 콜라주(큐레이션) → Unsplash → 위키미디어 공용 순.
+"""표지 배경 이미지: 기사 사진 → 인물 라이브러리 → 위키미디어 공용 → Unsplash 순.
 
-인물 사진은 assets/people/에 라이선스 메타데이터(people.json)와 함께 큐레이션한다.
-퍼블릭 도메인·CC 라이선스만 쓰고, CC BY 사진의 크레딧은 캡션에 반드시 표기한다.
-합성은 나란히 배치하는 콜라주뿐이다 — 없던 장면을 만들어내는 편집은 하지 않는다.
+**1순위는 이슈 기사에 실린 사진이다**(`photos.py`). 그 이슈를 다룬 기사에 매체가
+직접 붙인 사진이라 관련성이 편집자에 의해 보장되고, Claude 비전이 사물컷을 걸러
+가장 센 컷을 고른다.
 
-주제 배경은 두 곳에서 찾는다. Unsplash는 UNSPLASH_ACCESS_KEY가 있어야 하고 사진이
-예쁘지만 뉴스성이 약하다. 위키미디어 공용은 키가 필요 없고 연준 청사·거래소처럼
-기사에 실제로 등장하는 대상이 잡힌다(`wikimedia.py`가 라이선스를 API로 판정한다).
-셋 다 실패하면 None으로 폴백해 표지가 단색 배경으로 나간다 — 배경 때문에 발행이
-죽으면 안 된다.
+인물 라이브러리(assets/people/)는 **폴백**이다 — 기사에 사진이 없는 이슈(한경 단독
+등)의 안전망. 확대하지 않는다: 현직 인물은 이제 기사 사진이 덮는다.
+좌우 나란히 콜라주는 폐기했다(뉴스 썸네일처럼 보여 표지가 싸구려가 된다).
 
-신문기사 사진(연합·로이터·AP·게티)은 어떤 경로로도 쓰지 않는다.
+위키미디어가 Unsplash보다 먼저다. **Unsplash는 인물 커버리지가 0이고**(스톡 사진이라
+유명인이 없다) 늘어나는 건 주제 배경의 미적 품질뿐이다 — 인물·로고는 공용에서만 온다.
+
+전부 실패하면 None으로 폴백해 표지가 그래픽으로 나간다 — 배경 때문에 발행이 죽으면 안 된다.
+
+**라이선스**: 뉴스 사진에는 크레딧을 달지 않는다(사용자 결정, DMCA 리스크는 사용자 소유).
+**단 CC BY 크레딧은 라이선스 자체의 조건이라 유지한다** — 빼면 실제 위반이다.
 
 CLI:
     python -m econ_insta.backgrounds "semiconductor memory chips"   # 검색 시험
@@ -28,8 +32,9 @@ from pathlib import Path
 import requests
 from PIL import Image
 
-from . import wikimedia
+from . import photos, wikimedia
 from .config import PROJECT_ROOT, _load_dotenv
+from .issues import Issue
 
 WIDTH, HEIGHT = 1080, 1350
 TIMEOUT = 30
@@ -78,37 +83,31 @@ def available_people() -> dict[str, dict]:
 
 
 def compose_people(keys: list[str]) -> Background:
-    """인물 1~2명의 초상을 표지 배경으로 배치한다.
+    """인물 라이브러리의 초상을 표지 배경으로. **첫 번째 인물만 전면 크롭한다.**
 
-    2명이면 좌우 반씩 나란히(뉴스 썸네일식 대립 구도), 1명이면 전면 크롭.
+    좌우 나란히 콜라주는 폐기했다 — 뉴스 썸네일처럼 보여 표지가 싸구려가 된다.
+    2인 이상이면 첫 번째만 쓴다: 이 경로는 기사 사진이 1순위를 가져간 뒤에야 닿는
+    폴백의 폴백이라, 거의 안 쓰일 분할 합성 렌더러를 새로 짜는 것은 과잉이다.
+    모델이 people을 우선순위 순으로 주므로 첫 번째가 그 이슈의 주인공이다.
+
     얼굴이 잘리지 않도록 위쪽을 살려(top_bias 0.1) 자른다.
     """
     meta = available_people()
     unknown = [k for k in keys if k not in meta]
     if unknown:
         raise BackgroundError(f"인물 라이브러리에 없는 키: {unknown} (보유: {sorted(meta)})")
-    if not 1 <= len(keys) <= 2:
-        raise BackgroundError(f"인물은 1~2명이어야 합니다 (요청 {len(keys)}명).")
+    if not keys:
+        raise BackgroundError("인물이 없습니다.")
 
-    portraits = []
-    credits = []
-    for key in keys:
-        path = PEOPLE_DIR / meta[key]["file"]
-        if not path.exists():
-            raise BackgroundError(f"인물 사진 파일이 없습니다: {path}")
-        portraits.append(Image.open(path))
-        credits.append(meta[key]["credit"])
+    key = keys[0]
+    path = PEOPLE_DIR / meta[key]["file"]
+    if not path.exists():
+        raise BackgroundError(f"인물 사진 파일이 없습니다: {path}")
 
     canvas = Image.new("RGB", (WIDTH, HEIGHT))
-    if len(portraits) == 1:
-        canvas.paste(cover_crop(portraits[0], WIDTH, HEIGHT, top_bias=0.1), (0, 0))
-    else:
-        half = WIDTH // 2
-        canvas.paste(cover_crop(portraits[0], half, HEIGHT, top_bias=0.1), (0, 0))
-        canvas.paste(cover_crop(portraits[1], WIDTH - half, HEIGHT, top_bias=0.1), (half, 0))
-
-    # 중복 크레딧(같은 출처 두 명)은 하나만 남긴다.
-    return Background(image=canvas, credits=tuple(dict.fromkeys(credits)))
+    canvas.paste(cover_crop(Image.open(path), WIDTH, HEIGHT, top_bias=0.1), (0, 0))
+    # 안 쓴 사진의 크레딧을 달면 캡션이 거짓말이 된다.
+    return Background(image=canvas, credits=(meta[key]["credit"],))
 
 
 # --- Unsplash ------------------------------------------------------------
@@ -210,22 +209,40 @@ def build_background(
     bg_query: str,
     session: requests.Session | None = None,
     errors: list[str] | None = None,
+    *,
+    issue: Issue | None = None,
+    headline: str = "",
+    client=None,
 ) -> Background | None:
-    """인물 콜라주 → Unsplash → 위키미디어 공용 → None(단색 폴백).
+    """기사 사진 → 인물 → 위키미디어 → Unsplash → None(그래픽 폴백).
 
     배경은 장식이므로 실패를 삼키고 errors에만 남긴다. 발행을 막지 않는다.
+
+    `issue`는 기존 인자 뒤의 선택 키워드다 — 현 호출부가 전부 `(people, bg_query)`
+    위치 인자로 부르고, **AI 브리핑·블로그 요약에는 Issue라는 개념이 없다**
+    (이슈 클러스터링은 데일리 경제 브리핑만의 것). None이면 사진 경로를 건너뛴다.
     """
+    if issue is not None:
+        try:
+            photo = photos.pick(issue, headline, client=client, session=session)
+            if photo is not None:
+                # 뉴스 사진에는 크레딧을 달지 않는다(사용자 결정).
+                return Background(image=cover_crop(photo, WIDTH, HEIGHT, top_bias=0.1), credits=())
+        except Exception as exc:  # 사진 경로가 터져도 발행은 계속된다
+            if errors is not None:
+                errors.append(f"기사 사진 실패: {exc}")
+
     if people:
         try:
             return compose_people(people)
         except BackgroundError as exc:
             if errors is not None:
-                errors.append(f"인물 콜라주 실패: {exc}")
+                errors.append(f"인물 배경 실패: {exc}")
 
     if not bg_query:
         return None
 
-    for source in (fetch_unsplash, fetch_wikimedia):
+    for source in (fetch_wikimedia, fetch_unsplash):
         try:
             background = source(bg_query, session=session)
         except BackgroundError as exc:

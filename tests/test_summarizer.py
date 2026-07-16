@@ -8,6 +8,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from econ_insta.collector import KST, Article, DailyBrief, Quote
+from econ_insta.issues import rank_issues
 from econ_insta.summarizer import (
     CARD_BODY_MAX,
     HEADLINE_MAX,
@@ -99,17 +100,19 @@ class RenderArticleTest(unittest.TestCase):
 
 class BuildPromptTest(unittest.TestCase):
     def test_contains_articles_and_quotes(self):
-        text = build_prompt(brief())
+        b = brief()
+        text = build_prompt(b, rank_issues(b.articles))
         self.assertIn("코스피 급등", text)
         self.assertIn("7,476", text)
         self.assertIn("+2.52%", text)
 
     def test_notes_missing_quotes(self):
-        self.assertIn("지표 수집 실패", build_prompt(brief(quotes=[])))
+        b = brief(quotes=[])
+        self.assertIn("지표 수집 실패", build_prompt(b, rank_issues(b.articles)))
 
     def test_empty_articles_raises(self):
         with self.assertRaises(SummarizeError):
-            build_prompt(brief(articles=[]))
+            build_prompt(brief(articles=[]), [])
 
 
 class SummarizeTest(unittest.TestCase):

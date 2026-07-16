@@ -19,6 +19,7 @@ import anthropic
 from .collector import Article, DailyBrief, Quote, collect
 from .config import _load_dotenv
 from .factcheck import has_digits, unsupported_amounts, wrong_won_direction
+from .issues import Issue, rank_issues
 
 MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8000
@@ -144,7 +145,7 @@ def render_article(article: Article, index: int) -> str:
     return "\n".join(lines)
 
 
-def render_issue(issue, index: int) -> str:
+def render_issue(issue: Issue, index: int) -> str:
     sources = ", ".join(sorted(issue.sources))
     lines = [f"[이슈 {index}] 매체 {len(issue.sources)}곳({sources}), 기사 {len(issue.articles)}건"]
     for article in issue.articles:
@@ -155,13 +156,9 @@ def render_issue(issue, index: int) -> str:
     return "\n".join(lines)
 
 
-def build_prompt(brief: DailyBrief) -> str:
+def build_prompt(brief: DailyBrief, issues: list[Issue]) -> str:
     if not brief.articles:
         raise SummarizeError("요약할 기사가 없습니다.")
-
-    from .issues import rank_issues
-
-    issues = rank_issues(brief.articles)
 
     quotes = "\n".join(
         f"  {q.name}: {q.price_text} ({q.change_text})" for q in brief.quotes
@@ -265,7 +262,8 @@ def summarize(
     """생성 → 수치 감사 → (위반 시) 1회 재생성 → 남은 위반 카드는 폐기."""
     _load_dotenv()
     caller = client or anthropic.Anthropic()
-    prompt = build_prompt(brief)
+    issues = rank_issues(brief.articles)
+    prompt = build_prompt(brief, issues)
 
     payload, input_tokens, output_tokens = _generate(caller, model, prompt)
     problems = audit(payload, prompt, brief.quotes)

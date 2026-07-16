@@ -13,6 +13,7 @@ from econ_insta.photos import (
     Candidate,
     candidates,
     is_placeholder,
+    pick,
     usable,
 )
 
@@ -247,6 +248,113 @@ class UsableTest(unittest.TestCase):
         result = usable([cand("https://img.example.com/busy.jpg")], session=Flaky(), sleep=waits.append)
         self.assertEqual(len(result), 1)
         self.assertEqual(waits, [1.0])
+
+
+class FakeBlock:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class FakeUsage:
+    input_tokens = 100
+    output_tokens = 20
+
+
+class FakeAPIResponse:
+    def __init__(self, text, stop_reason="end_turn"):
+        self.content = [FakeBlock(text)]
+        self.stop_reason = stop_reason
+        self.usage = FakeUsage()
+
+
+class FakeMessages:
+    def __init__(self, text="", stop_reason="end_turn", raises=None):
+        self.text = text
+        self.stop_reason = stop_reason
+        self.raises = raises
+        self.kwargs = None
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        if self.raises:
+            raise self.raises
+        return FakeAPIResponse(self.text, self.stop_reason)
+
+
+class FakeClient:
+    def __init__(self, text="", stop_reason="end_turn", raises=None):
+        self.messages = FakeMessages(text, stop_reason, raises)
+
+
+def _issue_with(count: int) -> tuple[Issue, FakeSession]:
+    routes = {}
+    urls = []
+    for i in range(count):
+        url = f"https://img.example.com/{i}.jpg"
+        routes[url] = FakeResponse(_jpeg(1000, 1000))
+        urls.append(url)
+    return Issue(articles=[art("연합뉴스", urls)]), FakeSession(routes)
+
+
+class PickTest(unittest.TestCase):
+    def test_모델이_고른_번호의_사진을_돌려준다(self):
+        issue, session = _issue_with(3)
+        client = FakeClient('{"pick": 1, "reason": "인물 얼굴이 크게 잡혔다"}')
+        result = pick(issue, "코스피 급락", client=client, session=session)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.size, (1000, 1000))
+
+    def test_pick이_null이면_None(self):
+        """쓸 게 없으면 억지로 고르지 않는다 — 사물컷뿐인 이슈."""
+        issue, session = _issue_with(2)
+        client = FakeClient('{"pick": null, "reason": "전부 사옥 정면 사진"}')
+        self.assertIsNone(pick(issue, "삼성 신사옥", client=client, session=session))
+
+    def test_후보가_없으면_모델을_부르지_않는다(self):
+        issue = Issue(articles=[art("한국경제", [])])
+        client = FakeClient('{"pick": 0, "reason": "부르면 안 된다"}')
+        self.assertIsNone(pick(issue, "제목", client=client, session=FakeSession({})))
+        self.assertIsNone(client.messages.kwargs)
+
+    def test_API가_죽으면_기계_1등을_자동_채택하지_않고_None(self):
+        """자동 1등 채택은 정확히 팬아트 사고의 경로다. 점수를 매기는 주체가
+        Claude이므로 Claude가 없으면 점수도 없다."""
+        issue, session = _issue_with(3)
+        client = FakeClient(raises=RuntimeError("API 죽음"))
+        self.assertIsNone(pick(issue, "제목", client=client, session=session))
+
+    def test_범위_밖_번호는_None(self):
+        issue, session = _issue_with(2)
+        client = FakeClient('{"pick": 7, "reason": "없는 번호"}')
+        self.assertIsNone(pick(issue, "제목", client=client, session=session))
+
+    def test_JSON이_깨져도_죽지_않고_None(self):
+        issue, session = _issue_with(2)
+        client = FakeClient("이건 JSON이 아니다")
+        self.assertIsNone(pick(issue, "제목", client=client, session=session))
+
+    def test_후보_이미지가_프롬프트에_첨부된다(self):
+        issue, session = _issue_with(3)
+        client = FakeClient('{"pick": 0, "reason": "좋다"}')
+        pick(issue, "코스피 급락", client=client, session=session)
+        content = client.messages.kwargs["messages"][0]["content"]
+        images = [b for b in content if b["type"] == "image"]
+        self.assertEqual(len(images), 3)
+        self.assertEqual(images[0]["source"]["type"], "base64")
+
+    def test_이슈_제목이_프롬프트에_들어간다(self):
+        issue, session = _issue_with(1)
+        client = FakeClient('{"pick": 0, "reason": "좋다"}')
+        pick(issue, "코스피 7000 붕괴", client=client, session=session)
+        content = client.messages.kwargs["messages"][0]["content"]
+        texts = " ".join(b["text"] for b in content if b["type"] == "text")
+        self.assertIn("코스피 7000 붕괴", texts)
+
+    def test_max_tokens에서_잘리면_None(self):
+        issue, session = _issue_with(2)
+        client = FakeClient('{"pick": 0', stop_reason="max_tokens")
+        self.assertIsNone(pick(issue, "제목", client=client, session=session))
 
 
 if __name__ == "__main__":

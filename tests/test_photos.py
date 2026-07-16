@@ -191,6 +191,25 @@ class UsableTest(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0][1].size, (900, 700))
 
+    def test_매경이_먼저_와도_candidates_거쳐_연합_P4에_도달한다(self):
+        """4단계 최종 리뷰 #1 회귀 테스트.
+
+        collector가 발행 시각 내림차순으로 정렬하므로, 연합 사진을 받아쓴 매경 기사가
+        보통 연합 기사보다 나중에 발행돼 기사 목록에서 먼저 온다(실측) — 나쁜 쪽이
+        예외가 아니라 기본 경로다. candidates()는 slots.setdefault로 먼저 본 URL을
+        Candidate.url로 고정하는데, 그게 매경 URL(_P2가 없어 P4 승격이 안 걸림)이면
+        연합 원본은 버려지고 다시는 시도되지 않았다.
+
+        candidates()를 거쳐(직접 cand()로 만들지 않고) 매경이 먼저 오는 실제 순서로
+        넣었을 때도 연합 _P4 판본에 도달해야 한다."""
+        p4 = YNA_ORIGINAL.replace("_P2.", "_P4.")
+        issue = Issue(articles=[art("매일경제", [MK_RECEIVED]), art("연합뉴스", [YNA_ORIGINAL])])
+        session = FakeSession({p4: FakeResponse(_jpeg(1600, 1000))})
+        result = usable(candidates(issue), session=session)
+        self.assertEqual(len(result), 1, "연합 원본의 P4 판본을 끝내 못 찾고 후보 자체가 탈락했다")
+        self.assertEqual(result[0][1].size, (1600, 1000))
+        self.assertIn(p4, session.asked)
+
     def test_다운로드_실패는_그_후보만_건너뛴다(self):
         good = "https://img.example.com/good.jpg"
         session = FakeSession({good: FakeResponse(_jpeg(1000, 1000))})

@@ -448,6 +448,154 @@ def _photo_shade() -> Image.Image:
     return mask.resize((WIDTH, HEIGHT))
 
 
+def _fit_headline(
+    headline: str,
+    fonts: FontSet,
+    max_width: int,
+    max_height: int,
+    *,
+    start_size: int,
+    min_size: int,
+    weight: str = "black",
+) -> tuple[list[str], "ImageFont.FreeTypeFont", int]:
+    """헤드라인이 (max_width × max_height) 안에 들어오는 가장 큰 폰트 크기를 고른다.
+
+    카드 밖으로 넘치는 제목은 렌더 실패나 다름없다 — 길이는 기사 제목마다 들쭉날쭉하므로
+    한 번에 맞는 크기를 계산하지 않고, 큰 크기부터 단계적으로 줄이며 실제로 들어가는지 확인한다.
+    """
+    size = start_size
+    font = fonts.at(size, weight=weight)
+    lines = wrap(headline, font, max_width)
+    step = _line_height(font)
+    while len(lines) * step > max_height and size > min_size:
+        size = max(size - 4, min_size)
+        font = fonts.at(size, weight=weight)
+        lines = wrap(headline, font, max_width)
+        step = _line_height(font)
+    return lines, font, step
+
+
+def _render_cover_photo(
+    headline: str,
+    when: datetime,
+    fonts: FontSet,
+    kicker: str,
+    background: Image.Image,
+    theme: Theme,
+) -> Image.Image:
+    """사진/얼굴 표지. 기존 _photo_shade 스크림을 재사용한다(레퍼런스 cover_face)."""
+    if background.size != (WIDTH, HEIGHT):
+        raise RenderError(f"배경은 {WIDTH}×{HEIGHT}이어야 합니다 (받은 것: {background.size}).")
+    # 스크림은 **테마와 무관하게 어둡다.** 라이트 테마의 밝은 배경색으로 누르면
+    # 사진이 하얗게 뜨고 그 위의 흰 제목이 사라진다. 사진 표지 = 어두운 스크림 + 흰 글씨.
+    image = Image.composite(
+        Image.new("RGB", (WIDTH, HEIGHT), PHOTO_SCRIM),
+        background.convert("RGB"),
+        _photo_shade(),
+    )
+    draw = ImageDraw.Draw(image)
+    inner = WIDTH - MARGIN * 2
+
+    # 사진 위에서는 어떤 테마든 흰 글씨여야 읽힌다(어두운 스크림으로 눌러둔 위에 얹으므로).
+    # 보조 텍스트(날짜)도 MUTED로 두면 밝은 하늘 위에서 사라진다 — 실제로 삼성 사옥
+    # 표지에서 날짜가 안 보였다. 사진 위에서는 한 단계 밝게 쓴다.
+    kicker_pill(draw, (MARGIN, MARGIN), kicker, fonts.at(38, weight="bold"), theme.accent)
+    draw.text(
+        (MARGIN, MARGIN + 100), f"{when:%Y년 %m월 %d일}", font=fonts.at(30), fill=PHOTO_SUB
+    )
+
+    footer_top = HEIGHT - MARGIN - 40
+    lines, title_font, step = _fit_headline(
+        headline, fonts, inner, footer_top - 150 - MARGIN, start_size=104, min_size=48
+    )
+    top = footer_top - 110 - len(lines) * step
+    draw.rectangle([MARGIN, top - 44, MARGIN + 116, top - 32], fill=theme.accent)
+    for i, line in enumerate(lines):
+        draw.text((MARGIN, top + i * step), line, font=title_font, fill=FG)
+
+    draw.text((MARGIN, footer_top), "넘겨서 확인하세요 →", font=fonts.at(30), fill=PHOTO_SUB)
+    return image
+
+
+def _render_cover_dark(
+    headline: str,
+    when: datetime,
+    fonts: FontSet,
+    kicker: str,
+    theme: Theme,
+) -> Image.Image:
+    """다크 프리미엄 그래픽 표지(변주 A, 배경 없음). 레퍼런스 cover_graphic (데이터 히어로 차트는 스코프 밖)."""
+    image = premium_background(theme)
+    draw = ImageDraw.Draw(image)
+    inner = WIDTH - MARGIN * 2
+
+    kicker_pill(draw, (MARGIN, MARGIN), kicker, fonts.at(38, weight="bold"), theme.accent)
+    draw.text(
+        (MARGIN, MARGIN + 100), f"{when:%Y년 %m월 %d일}", font=fonts.at(30), fill=theme.muted
+    )
+
+    footer_top = HEIGHT - MARGIN - 40
+    lines, title_font, step = _fit_headline(
+        headline, fonts, inner, footer_top - 150 - MARGIN, start_size=104, min_size=48
+    )
+    top = footer_top - 110 - len(lines) * step
+    draw.rectangle([MARGIN, top - 44, MARGIN + 116, top - 32], fill=theme.accent)
+    for i, line in enumerate(lines):
+        draw.text((MARGIN, top + i * step), line, font=title_font, fill=theme.fg)
+
+    draw.text(
+        (MARGIN, footer_top), "넘겨서 확인하세요 →", font=fonts.at(30), fill=theme.muted
+    )
+    return image
+
+
+_INK = (22, 17, 14)
+
+
+def _render_cover_color(
+    headline: str,
+    when: datetime,
+    fonts: FontSet,
+    theme: Theme,
+) -> Image.Image:
+    """버밀리언 풀블리드 변주(C). 레퍼런스 cover_verm."""
+    signature = theme.signature or theme.accent
+    image = Image.new("RGB", (WIDTH, HEIGHT), signature)
+    draw = ImageDraw.Draw(image)
+    inner = WIDTH - MARGIN * 2
+
+    draw.text(
+        (MARGIN, MARGIN), "MARKET BRIEFING", font=fonts.at(34, weight="extrabold"), fill=(255, 255, 255)
+    )
+    date_text = f"{when:%Y.%m.%d}"
+    date_font = fonts.at(32, weight="semibold")
+    draw.text(
+        (WIDTH - MARGIN - date_font.getlength(date_text), MARGIN + 2),
+        date_text,
+        font=date_font,
+        fill=(255, 238, 232),
+    )
+    draw.line([(MARGIN, MARGIN + 64), (WIDTH - MARGIN, MARGIN + 64)], fill=(255, 255, 255), width=3)
+
+    lines, title_font, step = _fit_headline(
+        headline, fonts, inner, HEIGHT - 2 * (MARGIN + 200), start_size=118, min_size=48
+    )
+    top = (HEIGHT - len(lines) * step) // 2 - 30
+    for i, line in enumerate(lines):
+        draw.text((MARGIN, top + i * step), line, font=title_font, fill=_INK)
+
+    draw.text((MARGIN, HEIGHT - MARGIN - 150), "01", font=fonts.at(150, weight="black"), fill=(255, 255, 255))
+    cta_font = fonts.at(30, weight="semibold")
+    cta = "넘겨서 →"
+    draw.text(
+        (WIDTH - MARGIN - cta_font.getlength(cta), HEIGHT - MARGIN - 42),
+        cta,
+        font=cta_font,
+        fill=(255, 238, 232),
+    )
+    return image
+
+
 def render_cover(
     headline: str,
     when: datetime,
@@ -455,48 +603,23 @@ def render_cover(
     kicker: str = "데일리 경제 브리핑",
     background: Image.Image | None = None,
     theme: Theme = DEFAULT_THEME,
+    variant: str = "dark",
 ) -> Image.Image:
-    inner = WIDTH - MARGIN * 2
+    """표지 카드를 렌더한다.
 
-    if background is None:
-        image, draw = _canvas(theme.bg_cover)
-    else:
-        if background.size != (WIDTH, HEIGHT):
-            raise RenderError(f"배경은 {WIDTH}×{HEIGHT}이어야 합니다 (받은 것: {background.size}).")
-        # 스크림은 **테마와 무관하게 어둡다.** 라이트 테마의 밝은 배경색으로 누르면
-        # 사진이 하얗게 뜨고 그 위의 흰 제목이 사라진다. 사진 표지 = 어두운 스크림 + 흰 글씨.
-        image = Image.composite(
-            Image.new("RGB", (WIDTH, HEIGHT), PHOTO_SCRIM),
-            background.convert("RGB"),
-            _photo_shade(),
-        )
-        draw = ImageDraw.Draw(image)
+    `background`가 있으면 사진/얼굴 경로(변주와 무관하게 우선). 없으면 `variant`로
+    분기한다: "dark"(기본, 프리미엄 다크 그래픽) 또는 "color"(버밀리언 풀블리드).
+    """
+    if background is not None:
+        return _render_cover_photo(headline, when, fonts, kicker, background, theme)
 
-    # 사진 위에서는 어떤 테마든 흰 글씨여야 읽힌다(어두운 스크림으로 눌러둔 위에 얹으므로).
-    # 보조 텍스트(날짜)도 MUTED로 두면 밝은 하늘 위에서 사라진다 — 실제로 삼성 사옥
-    # 표지에서 날짜가 안 보였다. 사진 위에서는 한 단계 밝게 쓴다.
-    title_fill = FG if background is not None else theme.fg
-    sub_fill = PHOTO_SUB if background is not None else theme.muted
+    if variant == "color":
+        return _render_cover_color(headline, when, fonts, theme)
 
-    draw.text((MARGIN, MARGIN), kicker, font=fonts.at(38, bold=True), fill=theme.accent)
-    draw.text((MARGIN, MARGIN + 62), f"{when:%Y년 %m월 %d일}", font=fonts.at(32), fill=sub_fill)
+    if variant != "dark":
+        raise RenderError(f"알 수 없는 variant입니다: {variant!r}")
 
-    title_font = fonts.at(84, bold=True)
-    lines = wrap(headline, title_font, inner)
-    step = _line_height(title_font)
-    if background is None:
-        top = (HEIGHT - len(lines) * step) // 2
-    else:
-        # 사진 위에서는 얼굴을 가리지 않도록 제목을 어둡게 눌린 하단에 앉힌다.
-        top = HEIGHT - MARGIN - 110 - len(lines) * step
-    for i, line in enumerate(lines):
-        draw.text((MARGIN, top + i * step), line, font=title_font, fill=title_fill)
-
-    draw.line([(MARGIN, top - 48), (MARGIN + 120, top - 48)], fill=theme.accent, width=6)
-    draw.text(
-        (MARGIN, HEIGHT - MARGIN - 40), "넘겨서 확인하세요 →", font=fonts.at(30), fill=sub_fill
-    )
-    return image
+    return _render_cover_dark(headline, when, fonts, kicker, theme)
 
 
 def render_card(

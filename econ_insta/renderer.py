@@ -151,6 +151,15 @@ _BOLD_CANDIDATES = (
     Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
     Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
 )
+_BLACK_CANDIDATES = (
+    PROJECT_ROOT / "assets" / "fonts" / "Pretendard-Black.otf",
+)
+_EXTRABOLD_CANDIDATES = (
+    PROJECT_ROOT / "assets" / "fonts" / "Pretendard-ExtraBold.otf",
+)
+_SEMIBOLD_CANDIDATES = (
+    PROJECT_ROOT / "assets" / "fonts" / "Pretendard-SemiBold.otf",
+)
 
 
 class RenderError(RuntimeError):
@@ -175,22 +184,59 @@ def _resolve(env_name: str, candidates: tuple[Path, ...]) -> Path:
     )
 
 
+def _resolve_optional(env_name: str, candidates: tuple[Path, ...]) -> Path | None:
+    """없으면 None. 필수 굵기(regular/bold)와 달리 없어도 폴백하면 되므로 예외를 안 낸다."""
+    override = os.environ.get(env_name)
+    if override and Path(override).exists():
+        return Path(override)
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
 @dataclass(frozen=True)
 class FontSet:
-    """굵기·크기별 폰트 묶음. 테스트에서는 기본 폰트를 주입한다."""
+    """굵기·크기별 폰트 묶음. 테스트에서는 기본 폰트를 주입한다.
+
+    Pretendard 5단(Black/ExtraBold/Bold/SemiBold/Regular). 없는 굵기는 인접 굵기로
+    우아하게 폴백한다(맑은고딕/나눔은 Regular·Bold만 있으므로 Black→Bold).
+    """
 
     regular: Path
     bold: Path
+    black: Path | None = None
+    extrabold: Path | None = None
+    semibold: Path | None = None
 
     @classmethod
     def discover(cls) -> "FontSet":
         return cls(
             regular=_resolve("ECON_INSTA_FONT", _REGULAR_CANDIDATES),
             bold=_resolve("ECON_INSTA_FONT_BOLD", _BOLD_CANDIDATES),
+            black=_resolve_optional("ECON_INSTA_FONT_BLACK", _BLACK_CANDIDATES),
+            extrabold=_resolve_optional("ECON_INSTA_FONT_EXTRABOLD", _EXTRABOLD_CANDIDATES),
+            semibold=_resolve_optional("ECON_INSTA_FONT_SEMIBOLD", _SEMIBOLD_CANDIDATES),
         )
 
-    def at(self, size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
-        return ImageFont.truetype(str(self.bold if bold else self.regular), size)
+    def _path_for(self, *, weight: str | None = None, bold: bool = False) -> Path:
+        if weight is None:
+            weight = "bold" if bold else "regular"
+        # 굵은→얇은 폴백 사슬. None(파일 없음)이면 다음으로.
+        chains = {
+            "black": (self.black, self.extrabold, self.bold),
+            "extrabold": (self.extrabold, self.bold),
+            "bold": (self.bold,),
+            "semibold": (self.semibold, self.regular),
+            "regular": (self.regular,),
+        }
+        for candidate in chains.get(weight, (self.regular,)):
+            if candidate is not None:
+                return candidate
+        return self.regular
+
+    def at(self, size: int, *, bold: bool = False, weight: str | None = None) -> ImageFont.FreeTypeFont:
+        return ImageFont.truetype(str(self._path_for(weight=weight, bold=bold)), size)
 
 
 def wrap(text: str, font, max_width: int) -> list[str]:

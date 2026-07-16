@@ -45,7 +45,7 @@ class StubFonts(FontSet):
     def __init__(self) -> None:
         super().__init__(regular=Path("stub"), bold=Path("stub"))
 
-    def at(self, size: int, *, bold: bool = False):
+    def at(self, size: int, *, bold: bool = False, weight=None):
         return ImageFont.load_default(size)
 
 

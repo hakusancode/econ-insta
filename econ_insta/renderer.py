@@ -625,25 +625,38 @@ def render_cover(
 def render_card(
     card: Card, index: int, total: int, fonts: FontSet, theme: Theme = DEFAULT_THEME
 ) -> Image.Image:
-    image, draw = _canvas(theme.bg)
+    """본문 후크 카드: 골드 레일 + 큰 번호 + 제목/본문 세로 중앙 정렬(레퍼런스 `content` 포팅).
+
+    표지와 달리 배경은 항상 다크 프리미엄이다(사진·컬러 변주 없음) — 카드가 3~5장 연속으로
+    넘어가므로 톤을 흔들면 캐러셀이 산만해진다.
+    """
+    image = premium_background(theme)
+    draw = ImageDraw.Draw(image)
     inner = WIDTH - MARGIN * 2
 
-    draw.text((MARGIN, MARGIN), f"{index:02d}", font=fonts.at(64, bold=True), fill=theme.accent)
+    # 좌측 골드 세로 바(풀하이트) — 이 카드가 "본문"임을 표지·지표 카드와 구분한다.
+    draw.rectangle([0, 0, 12, HEIGHT], fill=theme.accent)
+
     draw.text(
-        (WIDTH - MARGIN, MARGIN + 24),
-        f"{index} / {total}",
-        font=fonts.at(28),
+        (MARGIN, MARGIN - 8), f"{index:02d}", font=fonts.at(120, weight="black"), fill=theme.accent
+    )
+    page_text = f"{index} / {total}"
+    draw.text(
+        (WIDTH - MARGIN, MARGIN + 40),
+        page_text,
+        font=fonts.at(34, weight="semibold"),
         fill=theme.muted,
         anchor="ra",
     )
 
-    title_font = fonts.at(58, bold=True)
-    body_font = fonts.at(40)
+    title_font = fonts.at(74, weight="extrabold")
+    body_font = fonts.at(46)
 
-    # 머리말(번호)과 꼬리말(출처) 사이 영역에 제목+구분선+본문을 세로 중앙 정렬한다.
-    gap = 44
+    # 머리말(큰 번호)과 꼬리말(출처) 사이 영역에 제목+구분선+본문을 세로 중앙 정렬한다.
+    # 번호가 커진 만큼(120) 머리말 여백도 표지/지표 카드보다 넓게 잡는다.
+    gap = 40
     block = _block_height(card.title, title_font, inner) + gap * 2 + _block_height(card.body, body_font, inner)
-    field_top, field_bottom = MARGIN + 150, HEIGHT - MARGIN - 90
+    field_top, field_bottom = MARGIN + 210, HEIGHT - MARGIN - 90
     top = max(field_top, field_top + (field_bottom - field_top - block) // 2)
 
     top = _draw_block(draw, card.title, title_font, top=top, fill=theme.fg, max_width=inner)
@@ -656,7 +669,7 @@ def render_card(
     draw.text(
         (MARGIN, HEIGHT - MARGIN - 36),
         f"출처 · {card.source}",
-        font=fonts.at(28),
+        font=fonts.at(30),
         fill=theme.muted,
     )
     return image

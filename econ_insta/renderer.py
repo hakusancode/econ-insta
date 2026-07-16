@@ -315,6 +315,38 @@ def premium_background(theme: Theme, size: tuple[int, int] = (WIDTH, HEIGHT), *,
     return grid_overlay(img, step=108, alpha=10)
 
 
+def draw_sparkline(image: Image.Image, series: list[float],
+                   box: tuple[int, int, int, int], color: Color, *,
+                   fill_alpha: int = 40, line_width: int = 4, dot: bool = True) -> Image.Image:
+    """box=(x0,y0,x1,y1) 안에 스파크라인(라인+면적)을 그린다. 값이 1개거나 모두 같아도 안전."""
+    x0, y0, x1, y1 = box
+    n = len(series)
+    if n == 0:
+        return image
+    lo, hi = min(series), max(series)
+    span = hi - lo
+
+    def _pt(i, v):
+        px = x0 if n == 1 else x0 + (x1 - x0) * i / (n - 1)
+        py = (y0 + y1) / 2 if span == 0 else y1 - (y1 - y0) * (v - lo) / span
+        return (px, py)
+
+    pts = [_pt(i, v) for i, v in enumerate(series)]
+    out = image.convert("RGBA")
+    if n >= 2:
+        area = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        ImageDraw.Draw(area).polygon(pts + [(x1, y1), (x0, y1)], fill=color + (fill_alpha,))
+        out = Image.alpha_composite(out, area)
+    d = ImageDraw.Draw(out)
+    if n >= 2:
+        d.line(pts, fill=color, width=line_width, joint="curve")
+    if dot:
+        ex, ey = pts[-1]
+        r = line_width + 2
+        d.ellipse([ex - r, ey - r, ex + r, ey + r], fill=color)
+    return out.convert("RGB")
+
+
 def wrap(text: str, font, max_width: int) -> list[str]:
     """max_width 안에 들어가도록 줄바꿈한다.
 

@@ -167,6 +167,34 @@ class IndicatorLayoutTest(unittest.TestCase):
         self.assertEqual(image.size, (WIDTH, HEIGHT))
 
 
+class RenderBackgroundTest(unittest.TestCase):
+    """render()가 표지에 배경을 태우는지.
+
+    render_cover는 2단계부터 사진 경로를 지원했지만 render()가 그 인자를 넘긴 적이
+    없다 — 데일리 표지가 여태 늘 그래픽이었던 이유다.
+    """
+
+    def setUp(self) -> None:
+        self.fonts = StubFonts()
+        self.briefing = make_briefing()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_background를_render_cover로_넘긴다(self):
+        background = Image.new("RGB", (WIDTH, HEIGHT), (0, 255, 0))
+        with mock.patch("econ_insta.renderer.render_cover", wraps=render_cover) as cover:
+            render(
+                self.briefing, WHEN, out_dir=self.tmp, fonts=self.fonts, background=background
+            )
+        self.assertIs(cover.call_args.kwargs["background"], background)
+
+    def test_background가_없으면_None으로_넘어간다(self):
+        with mock.patch("econ_insta.renderer.render_cover", wraps=render_cover) as cover:
+            render(self.briefing, WHEN, out_dir=self.tmp, fonts=self.fonts)
+        self.assertIsNone(cover.call_args.kwargs["background"])
+
+
 class RenderTest(unittest.TestCase):
     def setUp(self) -> None:
         self.fonts = StubFonts()

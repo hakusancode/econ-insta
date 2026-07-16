@@ -801,8 +801,13 @@ def render(
     out_dir: Path | None = None,
     fonts: FontSet | None = None,
     theme: Theme = DEFAULT_THEME,
+    background: Image.Image | None = None,
 ) -> list[Path]:
-    """카드 이미지를 순서대로 저장하고 경로 목록을 반환한다."""
+    """카드 이미지를 순서대로 저장하고 경로 목록을 반환한다.
+
+    `background`가 있으면 표지가 사진 경로로 간다. None이면 그래픽 표지.
+    배경 조달은 `backgrounds.build_background()`의 몫이고 여기서는 받아 넘기기만 한다.
+    """
     if not briefing.cards:
         raise RenderError("렌더할 카드가 없습니다.")
 
@@ -811,7 +816,7 @@ def render(
     target.mkdir(parents=True, exist_ok=True)
 
     total = len(briefing.cards)
-    images = [render_cover(briefing.headline, when, fonts, theme=theme)]
+    images = [render_cover(briefing.headline, when, fonts, theme=theme, background=background)]
     images += [render_card(c, i, total, fonts, theme=theme) for i, c in enumerate(briefing.cards, 1)]
     if briefing.quotes:
         images.append(

@@ -69,6 +69,11 @@ renderer.py     render(background=...) → render_cover(background=...)  ← ren
 클린으로 닫히고 299개 테스트가 통과한 뒤에도 실전에서 안 걸린 이유다.
 설계·실측·수정: `docs/superpowers/specs/2026-07-17-issue-contract-design.md`.
 
+참고: `photos.py`·`backgrounds.py`로 `briefing.issue`가 흐르는 배선은 위 다이어그램처럼 그려져
+있지만 **아직 프로덕션 호출부가 없다.** 데일리 브리핑 파이프라인이 모듈로 묶이지 않은 상태이고
+(바로 아래 문단·§11 참조), 그 묶는 작업 때 실제로 배선된다(계약 자체는
+`docs/superpowers/specs/2026-07-17-issue-contract-design.md` §4가 이미 정해 뒀다).
+
 **`renderer.render()`에 배경 통로가 없다 (코드 확인함).** 814행이 `render_cover(briefing.headline,
 when, fonts, theme=theme)` — `background`를 안 넘긴다. `render_cover` 자체는 2단계에서 사진 경로를
 지원하지만, **데일리 브리핑은 그 인자를 받은 적이 없다.** 그래서 데일리 표지는 여태 늘 그래픽이었고,

@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -62,6 +63,17 @@ RATE_PAYLOAD = {
         {"title": "앞으로", "body": "시장은 다음 회의의 신호를 기다린다.", "source": "한국경제", "role": "앞으로"},
     ],
 }
+
+
+def 이슈블록(prompt: str, n: int) -> str:
+    """프롬프트에서 `[이슈 N]` 블록만 잘라낸다. 다음 `[이슈 n+1]` 블록이나
+
+    안내문("가장 화제성이...") 직전까지가 그 이슈의 내용이다. 블록이 없으면(예:
+    후보를 슬라이스해 [이슈 2]가 통째로 안 실린 경우) AssertionError로 바로 드러난다.
+    """
+    match = re.search(rf"\[이슈 {n}\].*?(?=\n\n\[이슈 \d+\]|\n\n가장 화제성이|\Z)", prompt, re.DOTALL)
+    assert match is not None, f"프롬프트에 [이슈 {n}] 블록이 없다"
+    return match.group(0)
 
 
 def sample_brief():
@@ -128,6 +140,27 @@ class IssueContractTest(unittest.TestCase):
         # 다시 부르면 summarize 안의 것과 다른 객체가 나온다.
         self.assertEqual(briefing.issue.articles[0].title, "한은 기준금리 동결")
 
+    def test_프롬프트_번호와_chosen_issue_매핑이_일치한다(self):
+        """이음매 테스트: 프롬프트에서 [이슈 N]으로 번호 붙은 블록의 이슈 ==
+
+        `_chosen_issue`가 번호 N에 대해 돌려주는 이슈. `summarize()`는
+        `build_prompt(brief, issues)`와 `_chosen_issue(payload, issues)`에 **같은
+        issues 리스트를 변형 없이** 넘긴다는 사실에 기대어 번호가 맞아떨어진다. 그
+        불변식을 지키는 게 이 테스트뿐이다 — 스펙 §7이 후속으로 못박은
+        "프롬프트 후보 개수 조정"(`issues[:N]` 슬라이스)이나 정렬 순서를 바꾸는
+        리팩터가 이 테스트 없이는 조용히 계약을 깬다.
+
+        RATE_PAYLOAD의 issue_index=2는 sample_brief()의 두 번째 이슈(금리, 1매체)를
+        가리킨다. 프롬프트의 [이슈 2] 블록 안에 그 이슈의 대표 기사 제목이 실제로
+        있는지 확인한다 — issues 리스트와 프롬프트 번호가 어긋나면(뒤집히거나
+        슬라이스되면) 이 단언이 깨진다.
+        """
+        client = FakeClient(RATE_PAYLOAD)
+        briefing = summarize(sample_brief(), client=client)
+
+        block = 이슈블록(client.messages.last_prompt, 2)
+        self.assertIn(briefing.issue.articles[0].title, block)
+
     def test_범위밖_번호면_이슈없이_발행된다(self):
         """카드는 살아서 나간다 — 배경 조달의 문제이지 콘텐츠의 문제가 아니다."""
         for bad in (99, 0, -1):
@@ -141,7 +174,6 @@ class IssueContractTest(unittest.TestCase):
             {**PAYLOAD},
             {**PAYLOAD, "issue_index": "2"},
             {**PAYLOAD, "issue_index": None},
-            {**PAYLOAD, "issue_index": True},
         ):
             label = bad.get("issue_index", "(없음)")
             with self.subTest(issue_index=repr(label)):

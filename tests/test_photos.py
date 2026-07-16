@@ -45,17 +45,19 @@ class PhotoKeyTest(unittest.TestCase):
         )
         self.assertEqual(len(candidates(issue)), 1)
 
-    def test_PYH_PCM_아닌_P_패턴_사진은_병합되지_않는다(self):
-        """다른 매체의 서로 다른 사진이 우연히 P+대문자2글자+숫자 모양(예: PAB1234567890)
-        을 띠더라도 PYH/PCM이 아니면 병합되지 않아야 한다(오탐 방지)."""
+    def test_PYH_PCM_아닌_P_패턴은_느슨한_정규식에도_안_묶인다(self):
+        r"""옛날 느슨한 정규식(P[A-Z]{2}\d{10,})으로 회귀해도 대처하는지 확인.
+        같은 가짜 ID(예: PAB1234567890)를 두 무관한 매체에 심으면, 현재 정규식은
+        ID를 못 잡아 URL로 키를 만들어 2개 후보를 낸다. 느슨해지면 같은 ID로
+        1개로 뭉개진다 — 이 테스트가 그걸 잡는 안전망이다."""
         issue = Issue(
             articles=[
                 art("WSJ", ["https://images.wsj.net/im-PAB1234567890_p.jpg"]),
-                art("로이터", ["https://media.reuters.com/im-PDQ9876543210_q.jpg"]),
+                art("로이터", ["https://media.reuters.com/im-PAB1234567890_q.jpg"]),
             ]
         )
         result = candidates(issue)
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 2, "같은 가짜 ID PAB1234567890을 가진 두 URL은 PYH/PCM이 아니므로 병합되지 않아야 한다")
         self.assertEqual(result[0].sources, frozenset({"WSJ"}))
         self.assertEqual(result[1].sources, frozenset({"로이터"}))
 

@@ -727,35 +727,67 @@ def _change_color(change_pct: float) -> tuple[int, int, int]:
 def render_indicators(
     quotes, note: str, fonts: FontSet, theme: Theme = DEFAULT_THEME
 ) -> Image.Image:
-    image, draw = _canvas(theme.bg)
+    """지표 리스트 카드: 이름 · 미니 스파크라인 · 값/등락% (레퍼런스 `indicators` 포팅).
+
+    `quote.series`가 있으면 행 가운데에 등락색 스파크라인을 얹는다. 없으면(수집 실패)
+    값만 그려 우아하게 저하한다 — 스파크라인 한 줄이 없다고 카드 전체를 막을 이유는 없다.
+    날짜는 시그니처에 `when`이 없어 받을 수 없으므로, 부제는 날짜 없이 일반 문구로 둔다.
+    """
+    image = premium_background(theme)
+    draw = ImageDraw.Draw(image)
     inner = WIDTH - MARGIN * 2
 
-    draw.text((MARGIN, MARGIN), "오늘의 지표", font=fonts.at(58, bold=True), fill=theme.accent)
+    draw.text((MARGIN, MARGIN), "오늘의 지표", font=fonts.at(64, weight="extrabold"), fill=theme.fg)
+    draw.text((MARGIN, MARGIN + 84), "종가 기준", font=fonts.at(30), fill=theme.muted)
 
-    field_top, field_bottom = MARGIN + 160, HEIGHT - MARGIN
+    field_top, field_bottom = MARGIN + 176, HEIGHT - MARGIN
     layout = _indicator_layout(quotes, note, fonts, inner, field_bottom - field_top)
 
-    name_font = fonts.at(layout.name_size)
-    price_font = fonts.at(layout.price_size, bold=True)
-    change_font = fonts.at(layout.change_size, bold=True)
+    name_font = fonts.at(layout.name_size, weight="semibold")
+    price_font = fonts.at(layout.price_size, weight="bold")
+    change_font = fonts.at(layout.change_size, weight="bold")
     note_font = fonts.at(layout.note_size)
 
     top = max(field_top, field_top + (field_bottom - field_top - layout.height) // 2)
 
-    for quote in quotes:
-        draw.text((MARGIN, top), quote.name, font=name_font, fill=theme.fg)
+    # 가운데 스파크라인 열. 이름/값 칸은 고정 폭으로 예약해 지표 개수·자릿수가 달라져도
+    # 스파크라인이 겹치지 않게 한다(레퍼런스는 고정폭 300을 씀).
+    name_col_width = 260
+    value_col_width = 260
+    spark_x0 = MARGIN + name_col_width + 20
+    spark_x1 = WIDTH - MARGIN - value_col_width - 20
+
+    for i, quote in enumerate(quotes):
+        row_top = top
+        mid_y = row_top + layout.row_height / 2
+        color = theme.change_color(quote.change_pct)
+
+        draw.text((MARGIN, mid_y), quote.name, font=name_font, fill=theme.fg, anchor="lm")
+
+        if quote.series:
+            pad = max(int(layout.row_height * 0.16), 6)
+            box = (spark_x0, row_top + pad, spark_x1, row_top + layout.row_height - pad)
+            image = draw_sparkline(image, quote.series, box, color)
+            draw = ImageDraw.Draw(image)
+
         draw.text(
-            (WIDTH - MARGIN, top), quote.price_text, font=price_font, fill=theme.fg, anchor="ra"
+            (WIDTH - MARGIN, mid_y - layout.price_size * 0.32),
+            quote.price_text,
+            font=price_font,
+            fill=theme.fg,
+            anchor="rm",
         )
         draw.text(
-            (WIDTH - MARGIN, top + int(layout.row_height * 0.44)),
+            (WIDTH - MARGIN, mid_y + layout.change_size * 0.42),
             quote.change_text,
             font=change_font,
-            fill=theme.change_color(quote.change_pct),
-            anchor="ra",
+            fill=color,
+            anchor="rm",
         )
+
         top += layout.row_height
-        _rule(draw, top - 22, theme.rule)
+        if i < len(quotes) - 1:
+            _rule(draw, top - max(int(layout.row_height * 0.18), 8), theme.rule)
 
     if note:
         _draw_block(draw, note, note_font, top=top + NOTE_GAP, fill=theme.body, max_width=inner)

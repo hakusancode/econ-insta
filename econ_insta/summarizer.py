@@ -37,6 +37,20 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
 
 주어진 기사 목록과 시장지표로 오늘의 데일리 경제 브리핑을 만듭니다.
 
+오늘의 후보 이슈는 **여러 매체가 함께 다룬 순서(인기도)**로 정렬돼 제시됩니다.
+
+만드는 법:
+- **가장 화제성이 큰 이슈 하나**를 고르십시오(대개 첫 번째 후보). 그 이슈 하나만 다룹니다.
+- **여러 이슈를 한 게시물에 섞지 마십시오.** 표지와 모든 카드가 같은 사건이어야 합니다.
+- 고른 이슈에 묶인 기사들을 재료로, 표지=훅 한 문장, 카드=서사로 풀어냅니다:
+  · 카드1 무슨 일: 핵심 사실(무엇이·얼마나)
+  · 카드2 왜/배경: 맥락
+  · 카드3 반응/파장: 시장·업계 반응
+  · 카드4 앞으로: 다음 관전 포인트(마무리 한 방)
+  각 카드 role에 국면 라벨(무슨 일|왜|반응|앞으로)을 넣으십시오.
+- headline은 밋밋한 요약이 아니라 **스크롤을 멈추게 하는 훅 카피**로. (숫자 금지는 유지)
+- 한 이슈로 {MIN_CARDS}장을 채울 재료가 부족하면, 다음 후보 이슈로 바꾸십시오. 억지로 추측해 채우지 마십시오.
+
 저작권 원칙 (반드시 지킬 것):
 - 기사의 제목이나 요약문을 그대로 옮기지 마십시오. 사실만 추출해 완전히 새로운 문장으로 다시 쓰십시오.
 - 각 카드에는 출처 매체명을 반드시 남기십시오.
@@ -57,7 +71,7 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
   → 265억 달러)은 괜찮지만, 값을 바꾸거나(41조 → 40조) 없는 값을 만들지 마십시오.
 
 편집 기준:
-- 카드는 {MIN_CARDS}~{MAX_CARDS}장. 거시경제·시장·산업에서 파급력이 큰 것부터 고르십시오.
+- 카드는 {MIN_CARDS}~{MAX_CARDS}장.
 - 특정 기업 홍보성 기사(후원, 협약, 봉사, 수상)는 제외하십시오.
 - headline은 {HEADLINE_MAX}자 이내, 카드 title은 {CARD_TITLE_MAX}자 이내,
   body는 {CARD_BODY_MAX}자 이내의 2~3문장.
@@ -130,20 +144,35 @@ def render_article(article: Article, index: int) -> str:
     return "\n".join(lines)
 
 
+def render_issue(issue, index: int) -> str:
+    sources = ", ".join(sorted(issue.sources))
+    lines = [f"[이슈 {index}] 매체 {len(issue.sources)}곳({sources}), 기사 {len(issue.articles)}건"]
+    for article in issue.articles:
+        has_body = bool(article.summary)
+        lines.append(f"  - ({article.source}) {article.title}  [본문:{'있음' if has_body else '없음'}]")
+        if has_body:
+            lines.append(f"      {article.summary}")
+    return "\n".join(lines)
+
+
 def build_prompt(brief: DailyBrief) -> str:
     if not brief.articles:
         raise SummarizeError("요약할 기사가 없습니다.")
 
+    from .issues import rank_issues
+
+    issues = rank_issues(brief.articles)
+
     quotes = "\n".join(
         f"  {q.name}: {q.price_text} ({q.change_text})" for q in brief.quotes
     ) or "  (지표 수집 실패)"
-    articles = "\n".join(render_article(a, i) for i, a in enumerate(brief.articles, 1))
+    blocks = "\n\n".join(render_issue(iss, i) for i, iss in enumerate(issues, 1))
 
     return (
         f"오늘 날짜: {brief.collected_at:%Y년 %m월 %d일}\n\n"
         f"[시장지표]\n{quotes}\n\n"
-        f"[기사 후보 {len(brief.articles)}건]\n{articles}\n\n"
-        "위 자료로 오늘의 브리핑을 만드십시오."
+        f"[후보 이슈 {len(issues)}개 — 화제성(매체 수) 내림차순]\n{blocks}\n\n"
+        "가장 화제성이 큰 이슈 하나를 골라 단일 이슈 브리핑을 만드십시오."
     )
 
 
@@ -260,7 +289,10 @@ def summarize(
             raise SummarizeError(f"{field}에 근거 없는 숫자가 남았습니다: {payload[field]!r}")
 
     dropped = {int(key[5:]) for key in problems}
-    cards = [Card(**c) for i, c in enumerate(payload["cards"]) if i not in dropped]
+    cards = [
+        Card(title=c["title"], body=c["body"], source=c["source"], role=c.get("role"))
+        for i, c in enumerate(payload["cards"]) if i not in dropped
+    ]
 
     if len(cards) < MIN_CARDS:
         raise SummarizeError(

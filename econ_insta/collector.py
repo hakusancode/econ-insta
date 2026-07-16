@@ -109,6 +109,8 @@ class Article:
     summary: str = ""
     language: str = "ko"
     """en이면 요약 단계에서 한국어로 옮겨야 한다."""
+    images: list[str] = field(default_factory=list)
+    """항목에 실린 이미지 URL(등장 순서). 표지 후보의 원천."""
 
     @property
     def age(self) -> timedelta:
@@ -225,6 +227,33 @@ def _text(item: ET.Element, tag: str) -> str:
     return "" if element is None else "".join(element.itertext())
 
 
+IMAGE_TAGS = {"content", "thumbnail", "enclosure"}
+
+
+def _images(item: ET.Element) -> list[str]:
+    """항목에 직접 실린 이미지 URL.
+
+    **기사 페이지는 가져오지 않는다.** WSJ·Economist는 페이지가 403이고(실측),
+    RSS 태그만으로 연합·매경·WSJ이 덮인다. 페이지를 안 가면 빠르고 봇 차단도 없다.
+
+    네임스페이스가 붙으므로 태그 로컬명으로 비교한다. type이 있으면 믿고,
+    없으면 받아들인다 — WSJ media:content는 확장자도 type도 없다(im-925351).
+    """
+    urls: list[str] = []
+    for element in item.iter():
+        if element.tag.split("}")[-1] not in IMAGE_TAGS:
+            continue
+        url = (element.get("url") or "").strip()
+        if not url:
+            continue
+        mime = (element.get("type") or "").lower()
+        if mime and not mime.startswith("image/"):
+            continue
+        if url not in urls:
+            urls.append(url)
+    return urls
+
+
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
 
 
@@ -277,6 +306,7 @@ def parse_feed(source: str, xml_bytes: bytes, language: str = "ko") -> list[Arti
                 published=published,
                 summary=clean_text(_text(item, "description"))[:300],
                 language=language,
+                images=_images(item),
             )
         )
 
@@ -300,6 +330,7 @@ def parse_feed(source: str, xml_bytes: bytes, language: str = "ko") -> list[Arti
                 published=published,
                 summary=clean_text(summary)[:300],
                 language=language,
+                images=_images(entry),
             )
         )
 

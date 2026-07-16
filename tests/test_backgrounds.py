@@ -135,10 +135,21 @@ class FetchUnsplashTest(unittest.TestCase):
 
 
 class BuildBackgroundTest(unittest.TestCase):
-    def test_인물이_우선한다(self):
-        """콜라주는 폐기됐으므로 2명을 줘도 첫 번째 인물 배경 한 장이 나온다."""
-        background = build_background(["trump", "xi"], "us china trade war")
-        self.assertEqual(len(background.credits), 1)
+    def test_인물이_있으면_bg_query_폴백보다_우선한다(self):
+        """인물은 더 이상 전체 1순위가 아니다(1순위는 기사 사진) — 다만 issue가 없어
+        사진 경로를 안 타는 구간에서는 위키미디어·Unsplash 폴백보다는 여전히 앞선다.
+        이전 이름 `test_인물이_우선한다`는 이제 사실과 반대라 고쳤고, 검증 내용도
+        (ComposePeopleTest의 크레딧 개수 중복 대신) 실제 우선순위 — 폴백 소스가
+        아예 호출되지 않는지 — 로 바꿨다(4단계 최종 리뷰 #5)."""
+        with mock.patch("econ_insta.backgrounds.fetch_wikimedia") as wikimedia, mock.patch(
+            "econ_insta.backgrounds.fetch_unsplash"
+        ) as unsplash:
+            background = build_background(["trump"], "us china trade war")
+        wikimedia.assert_not_called()
+        unsplash.assert_not_called()
+        self.assertEqual(
+            list(background.image.getdata()), list(compose_people(["trump"]).image.getdata())
+        )
 
     def test_인물_실패는_삼키고_errors에_남긴다(self):
         errors = []
@@ -155,11 +166,17 @@ class BuildBackgroundChainTest(unittest.TestCase):
         return Image.new("RGB", (1600, 1200), (10, 200, 10))
 
     def test_기사_사진이_있으면_1순위다(self):
+        """people도 있는 상태에서 기사 사진이 이겨야 진짜 '우선순위' 검증이다.
+        이전에는 people=[]로 불러 사진 경로가 유일한 생존 경로였다 — '동작'만
+        검증했지 '우선순위'는 검증하지 못했다(4단계 최종 리뷰 #4, 체인 순서를
+        뒤집는 뮤테이션에도 통과했었다). people=["trump"]를 줘서 인물 경로도
+        살아있는 상태에서 기사 사진(단색 초록)이 인물 사진을 이기는지 픽셀로 확인한다."""
         with mock.patch("econ_insta.backgrounds.photos.pick", return_value=self._photo()) as picked:
-            background = build_background([], "", issue=mock.Mock(), headline="코스피 급락")
+            background = build_background(["trump"], "", issue=mock.Mock(), headline="코스피 급락")
         self.assertIsNotNone(background)
         self.assertEqual(background.image.size, (WIDTH, HEIGHT))
         picked.assert_called_once()
+        self.assertEqual(background.image.getpixel((0, 0)), (10, 200, 10))
 
     def test_뉴스_사진에는_크레딧을_안_단다(self):
         """사용자 결정. 위키미디어 CC BY 크레딧은 이와 무관하게 유지된다."""

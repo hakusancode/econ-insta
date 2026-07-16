@@ -72,7 +72,7 @@ def cover_crop(image: Image.Image, width: int, height: int, top_bias: float = 0.
     return resized.crop((left, top, left + width, top + height))
 
 
-# --- 인물 콜라주 ---------------------------------------------------------
+# --- 인물 라이브러리(폴백) -------------------------------------------------
 
 
 def available_people() -> dict[str, dict]:

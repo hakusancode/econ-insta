@@ -347,6 +347,17 @@ def draw_sparkline(image: Image.Image, series: list[float],
     return out.convert("RGB")
 
 
+def kicker_pill(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, font,
+                color: Color, *, pad_x: int = 34, pad_y: int = 17, height: int = 78) -> float:
+    """골드 아웃라인 라운드 라벨. pill 오른쪽 x를 반환."""
+    x, y = xy
+    tw = draw.textlength(text, font=font)
+    right = x + tw + pad_x * 2
+    draw.rounded_rectangle([x, y, right, y + height], radius=height // 2, outline=color, width=3)
+    draw.text((x + pad_x, y + pad_y), text, font=font, fill=color)
+    return right
+
+
 def wrap(text: str, font, max_width: int) -> list[str]:
     """max_width 안에 들어가도록 줄바꿈한다.
 

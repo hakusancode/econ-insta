@@ -136,7 +136,7 @@ MONO = Theme(
 )
 
 DARK_PREMIUM = Theme(
-    name="다크 프리미엄",
+    name="프리미엄 다크",
     bg=(11, 14, 22),
     bg_cover=(10, 12, 20),
     fg=(245, 246, 250),

@@ -45,6 +45,20 @@ class PhotoKeyTest(unittest.TestCase):
         )
         self.assertEqual(len(candidates(issue)), 1)
 
+    def test_PYH_PCM_아닌_P_패턴_사진은_병합되지_않는다(self):
+        """다른 매체의 서로 다른 사진이 우연히 P+대문자2글자+숫자 모양(예: PAB1234567890)
+        을 띠더라도 PYH/PCM이 아니면 병합되지 않아야 한다(오탐 방지)."""
+        issue = Issue(
+            articles=[
+                art("WSJ", ["https://images.wsj.net/im-PAB1234567890_p.jpg"]),
+                art("로이터", ["https://media.reuters.com/im-PDQ9876543210_q.jpg"]),
+            ]
+        )
+        result = candidates(issue)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].sources, frozenset({"WSJ"}))
+        self.assertEqual(result[1].sources, frozenset({"로이터"}))
+
     def test_ID가_없으면_URL이_키라서_병합되지_않는다(self):
         """안전한 저하 — 모르는 형식을 억지로 묶지 않는다."""
         issue = Issue(

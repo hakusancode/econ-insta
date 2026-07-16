@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from .issues import Issue
 
-YNA_PHOTO_ID = re.compile(r"(P[A-Z]{2}\d{10,})")
+YNA_PHOTO_ID = re.compile(r"(P(?:YH|CM)\d{10,})")  # 실측에서 확인된 연합 사진 ID 접두사는 PYH(19자리)와 PCM(17자리)뿐
 
 
 @dataclass(frozen=True)

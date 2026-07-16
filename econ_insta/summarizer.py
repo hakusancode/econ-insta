@@ -31,7 +31,7 @@ MAX_CARDS = 5
 # 프롬프트로 지시하고 코드에서 검증한다.
 HEADLINE_MAX = 24
 CARD_TITLE_MAX = 30
-CARD_BODY_MAX = 120
+CARD_BODY_MAX = 160
 
 SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
 
@@ -75,7 +75,8 @@ SCHEMA = {
                 "properties": {
                     "title": {"type": "string"},
                     "body": {"type": "string"},
-                    "source": {"type": "string", "description": "출처 매체명"},
+                    "source": {"type": "string", "description": "출처 매체명(복수면 대표 1곳 또는 'A·B')"},
+                    "role": {"type": "string", "description": "서사 국면: 무슨 일 | 왜 | 반응 | 앞으로 (선택)"},
                 },
                 "required": ["title", "body", "source"],
                 "additionalProperties": False,
@@ -96,6 +97,8 @@ class Card:
     title: str
     body: str
     source: str
+    role: str | None = None
+    """서사 국면 라벨(무슨 일/왜/반응/앞으로). 없어도 된다."""
 
 
 @dataclass(frozen=True)

@@ -498,7 +498,11 @@ renderer.py     render(background=...) → render_cover(background=...)  ← ren
 
 - [ ] **Step 3: 원장을 갱신한다**
 
-`.superpowers/sdd/progress.md` 끝에 추가한다. 82-93행의 "**[치명적 설계 결함 — 4단계가 실전에서 안 걸림. 새 세션 최우선]**" 블록은 **지우지 않는다** — 원장은 durable 기록이고 결함의 발견 경위가 다음 사람에게 근거로 남아야 한다. 해소 사실을 뒤에 붙인다:
+`.superpowers/sdd/progress.md`는 **git 무시 대상이다**(`.superpowers/sdd/.gitignore`가 `*`). 커밋하지 말 것 —
+`git add`가 "paths are ignored" 에러로 실패한다. 1~4단계 원장도 전부 커밋 안 된 로컬 스크래치이고 그게 설계대로다.
+파일만 고치고 Step 5의 커밋 대상에서 뺀다.
+
+파일 끝에 추가한다. 82-93행의 "**[치명적 설계 결함 — 4단계가 실전에서 안 걸림. 새 세션 최우선]**" 블록은 **지우지 않는다** — 원장은 durable 기록이고 결함의 발견 경위가 다음 사람에게 근거로 남아야 한다. 해소 사실을 뒤에 붙인다:
 
 ```markdown
 
@@ -525,8 +529,10 @@ Expected: **304 passed**, 실패 0. (문서만 고쳤으므로 변화 없어야 
 
 - [ ] **Step 5: 커밋**
 
+원장은 git 무시 대상이라 커밋에 안 들어간다(Step 3). 스펙 파일만 add한다.
+
 ```bash
-git add docs/superpowers/specs/2026-07-16-image-sourcing-design.md .superpowers/sdd/progress.md
+git add docs/superpowers/specs/2026-07-16-image-sourcing-design.md
 git commit -F - <<'EOF'
 docs: 4단계 스펙의 빈 칸(누가 Issue를 아는가)을 메우고 원장 갱신
 

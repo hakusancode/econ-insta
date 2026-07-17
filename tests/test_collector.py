@@ -10,6 +10,8 @@ from econ_insta.collector import (
     Article,
     CollectError,
     FeedSpec,
+    GLOBAL_FEEDS,
+    KR_FEEDS,
     Quote,
     apply_quota,
     clean_text,
@@ -266,6 +268,17 @@ class FakeSession:
         return FakeResponse(self.bodies[url])
 
 
+class FeedSplitTest(unittest.TestCase):
+    def test_분할_합집합이_FEEDS와_같고_교집합이_없다(self):
+        """에디션 분할이 피드를 잃거나 겹치면 안 된다. FEEDS 내용 불변이 계약."""
+        from econ_insta.collector import FEEDS
+
+        self.assertEqual({**KR_FEEDS, **GLOBAL_FEEDS}, FEEDS)
+        self.assertEqual(KR_FEEDS.keys() & GLOBAL_FEEDS.keys(), set())
+        self.assertEqual(set(KR_FEEDS), {"연합뉴스", "한국경제", "매일경제"})
+        self.assertEqual(set(GLOBAL_FEEDS), {"WSJ", "The Economist"})
+
+
 class CollectArticlesTest(unittest.TestCase):
     def setUp(self):
         self._real_session = None
@@ -406,6 +419,18 @@ class CollectArticlesTest(unittest.TestCase):
 
         brief = mod.collect()
         self.assertEqual(len(brief.articles), 5)
+
+    def test_collect은_받은_feeds만_쓴다(self):
+        """에디션 분리의 근간 — feeds를 무시하고 FEEDS 전체를 돌면 해외판에 국내 기사가 섞인다."""
+        import econ_insta.collector as mod
+
+        self._patch(FakeSession({"https://a": rss(item(title="해외뉴스", link="https://x/1"))}))
+        self.addCleanup(setattr, mod, "collect_quotes", mod.collect_quotes)
+        mod.collect_quotes = lambda errors=None: []
+
+        feeds = {"WSJ": FeedSpec("https://a", language="en", max_age_hours=self.FOREVER)}
+        brief = mod.collect(feeds=feeds)
+        self.assertEqual([a.title for a in brief.articles], ["해외뉴스"])
 
 
 class QuoteFormatTest(unittest.TestCase):

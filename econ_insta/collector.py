@@ -49,12 +49,15 @@ class FeedSpec:
 
 # 주의: WSJ의 옛 주소(feeds.a.dj.com)는 HTTP 200을 주지만 2025-01에 갱신이 멈춘 죽은 피드다.
 # 살아 있는 것은 feeds.content.dowjones.io 쪽이다.
-FEEDS: dict[str, FeedSpec] = {
+KR_FEEDS: dict[str, FeedSpec] = {
     # 연합뉴스는 한때 제외했으나 사용자 지시로 복귀(2026-07-14). 앞으로 빼지 말 것.
     # 경제 섹션은 economy.xml이고 본문(description)이 온다 — 한경과 달리 카드 소재가 된다.
     "연합뉴스": FeedSpec("https://www.yna.co.kr/rss/economy.xml", quota=4),
     "한국경제": FeedSpec("https://www.hankyung.com/feed/economy"),
     "매일경제": FeedSpec("https://www.mk.co.kr/rss/30100041/"),
+}
+
+GLOBAL_FEEDS: dict[str, FeedSpec] = {
     "WSJ": FeedSpec(
         "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",
         language="en",
@@ -67,6 +70,10 @@ FEEDS: dict[str, FeedSpec] = {
         quota=2,
     ),
 }
+
+# 에디션 분할(2026-07-17): 오전 해외판은 GLOBAL_FEEDS만, 저녁 국내판은 KR_FEEDS만 쓴다.
+# 합집합은 기존 FEEDS와 동일해야 한다 — 기존 소비자(ai_brief 제외 전부)가 이것을 쓴다.
+FEEDS: dict[str, FeedSpec] = {**KR_FEEDS, **GLOBAL_FEEDS}
 
 # 브리핑에 쓸 수 없는 정형 기사의 말머리. [특징주]·[외환]은 시장 소재이므로 남긴다.
 BOILERPLATE_TAGS = frozenset(
@@ -484,15 +491,17 @@ def collect_quotes(
     return quotes
 
 
-def collect() -> DailyBrief:
+def collect(feeds: dict[str, FeedSpec] | None = None) -> DailyBrief:
     """기사와 지표를 함께 모은다. 한쪽이 실패해도 brief.errors에 남기고 진행한다.
 
     기사는 **전량**이다(수백 건). 매체별 쿼터를 적용하지 않는다 — 쿼터는 중요도를
     못 보고 최신순으로 잘라 그날의 최대 뉴스를 버렸다(스펙 §1.1). 자르는 일은
     summarize()가 rank_issues 뒤에서 한다.
+
+    feeds를 주면 그 피드만 수집한다(에디션 분리 — 오전 해외판/저녁 국내판). None이면 전체.
     """
     errors: list[str] = []
-    articles = gather_articles(errors=errors)
+    articles = gather_articles(feeds=feeds, errors=errors)
 
     try:
         quotes = collect_quotes(errors=errors)

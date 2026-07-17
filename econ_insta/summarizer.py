@@ -67,8 +67,10 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
   "원화 강세/약세"로 옮기지 마십시오. 방향을 뒤집어 쓰는 실수가 실제로 나왔습니다.
 
 수치 규칙 (기계적으로 검증되며, 위반 시 카드가 폐기됩니다):
-- headline과 indicator_note에는 숫자를 단 하나도 쓰지 마십시오. 지표 수치는 카드 이미지에
+- indicator_note에는 숫자를 단 하나도 쓰지 마십시오. 지표 수치는 카드 이미지에
   코드가 직접 새기므로 문장에서 반복할 필요가 없습니다. 흐름을 말로 서술하십시오.
+- headline에는 **자료에 있는 수치만** 쓸 수 있습니다. 그 뉴스의 핵심이 수치라면 쓰십시오
+  (예: "3년 6개월 만의 인상"). 다만 자료에 없는 값을 만들거나 바꾸면 카드가 폐기됩니다.
 - 카드 body의 모든 수치는 제공된 자료에 있는 값이어야 합니다. 단위 환산(예: $26.51 billion
   → 265억 달러)은 괜찮지만, 값을 바꾸거나(41조 → 40조) 없는 값을 만들지 마십시오.
 
@@ -77,7 +79,16 @@ SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
 - 특정 기업 홍보성 기사(후원, 협약, 봉사, 수상)는 제외하십시오.
 - headline은 {HEADLINE_MAX}자 이내, 카드 title은 {CARD_TITLE_MAX}자 이내,
   body는 {CARD_BODY_MAX}자 이내의 2~3문장.
-- indicator_note는 오늘 지표 흐름을 한 문장으로 짚는 코멘트입니다."""
+- indicator_note는 오늘 지표 흐름을 한 문장으로 짚는 코멘트입니다.
+- bg_query: 표지 배경 사진을 찾을 **영어** 검색어 2~4단어. 항상 채우십시오.
+  기사에 실린 사진을 못 구했을 때 이 검색어로 표지 사진을 찾습니다.
+  **사진으로 찍을 수 있는 구체적 대상**을 쓰십시오. 두 갈래가 잘 잡힙니다:
+  · 감정이 드러난 사람 — "stressed trader screen", "worried investor head in hands",
+    "anxious businessman office". 표지에서 가장 센 컷이고 스크롤을 멈추게 합니다.
+  · 기관·건물·시설·장소 — "Bank of Korea building", "New York Stock Exchange",
+    "semiconductor fabrication plant", "container ship port".
+  "inflation", "market anxiety", "artificial intelligence" 같은 **추상 개념은 쓰지 마십시오** —
+  검색이 실패하거나 엉뚱한 사진이 나옵니다."""
 
 SCHEMA = {
     "type": "object",
@@ -85,6 +96,7 @@ SCHEMA = {
         "headline": {"type": "string", "description": "표지 카드 제목"},
         "indicator_note": {"type": "string", "description": "지표 카드에 얹을 한 문장 코멘트"},
         "issue_index": {"type": "integer", "description": "당신이 고른 이슈의 번호(프롬프트의 [이슈 N])"},
+        "bg_query": {"type": "string", "description": "표지 배경 사진 검색용 영어 키워드 2~4단어"},
         "cards": {
             "type": "array",
             "items": {
@@ -100,7 +112,7 @@ SCHEMA = {
             },
         },
     },
-    "required": ["headline", "indicator_note", "issue_index", "cards"],
+    "required": ["headline", "indicator_note", "issue_index", "bg_query", "cards"],
     "additionalProperties": False,
 }
 
@@ -126,6 +138,13 @@ class Briefing:
     quotes: list[Quote]
     issue: Issue | None = None
     """모델이 고른 이슈. None이면 표지 사진을 조달할 대상이 없어 그래픽으로 나간다."""
+    bg_query: str = ""
+    """기사 사진을 못 구했을 때 위키미디어·Unsplash에서 표지를 찾을 영어 검색어.
+
+    이게 없으면 build_background가 `if not bg_query: return None`으로 스톡 사진 단계를
+    통째로 건너뛴다(backgrounds.py). 데일리는 people도 없어서, 이 필드가 비면 기사 사진이
+    실패하는 순간 표지가 무조건 그래픽이 된다 — 2026-07-16·17 이틀 연속 그렇게 나갔다.
+    """
     input_tokens: int = 0
     output_tokens: int = 0
     dropped_cards: int = 0
@@ -203,9 +222,18 @@ def audit(payload: dict, source: str, quotes: list[Quote] | None = None) -> dict
     """근거 없는 수치와 뒤집힌 환율 방향을 찾는다. 키는 'headline' | 'indicator_note' | 'card:<index>'."""
     problems: dict[str, list[str]] = {}
 
-    for field in ("headline", "indicator_note"):
-        if has_digits(payload[field]):
-            problems[field] = ["숫자 사용 금지"]
+    # indicator_note는 숫자 전면 금지다. 지표 수치는 지표 카드에 코드가 직접 새기므로
+    # 문장에서 반복하면 같은 값이 두 번 나온다.
+    if has_digits(payload["indicator_note"]):
+        problems["indicator_note"] = ["숫자 사용 금지"]
+
+    # headline은 카드 본문과 같은 기준을 쓴다: 자료에 있는 값이면 허용, 지어낸 값은 차단.
+    # 전면 금지였는데 과잉이었다 — 2026-07-16·17에 네 번 연속으로 실행을 죽였다
+    # ("7조달러", "7천피", "3년 6개월 만에", "3년반 만에"). 전부 기사에 있는 사실이고
+    # 지표 수치가 아니라 그 뉴스의 핵심이었다. 표지는 지표 카드와 값이 겹치지 않는다.
+    bad_headline = unsupported_amounts(payload["headline"], source)
+    if bad_headline:
+        problems["headline"] = bad_headline
 
     # 지표에서 파생된 문장만 검사한다. 카드 본문에는 전망·인용이 섞여 오탐이 난다.
     reversed_fx = wrong_won_direction(payload["indicator_note"], usdkrw_change(quotes or []))
@@ -327,6 +355,7 @@ def summarize(
         cards=cards,
         quotes=brief.quotes,
         issue=_chosen_issue(payload, issues),
+        bg_query=str(payload.get("bg_query") or "").strip(),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         dropped_cards=len(dropped),

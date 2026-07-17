@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from econ_insta.collector import KST, Article, DailyBrief, Quote
 from econ_insta.issues import rank_issues
-from econ_insta.summarizer import summarize, build_prompt, SCHEMA, SYSTEM
+from econ_insta.summarizer import summarize, build_prompt, SCHEMA, SYSTEM, SYSTEM
 
 
 def art(title, source, summary=""):
@@ -57,6 +57,7 @@ RATE_PAYLOAD = {
     "headline": "금리 동결, 시장은 숨을 골랐다",
     "indicator_note": "관망세가 지표에 묻어났다",
     "issue_index": 2,
+    "bg_query": "Bank of Korea building",
     "cards": [
         {"title": "무슨 일", "body": "한국은행이 기준금리를 동결했다.", "source": "한국경제", "role": "무슨 일"},
         {"title": "왜", "body": "물가 둔화와 경기 부진을 함께 고려했다.", "source": "한국경제", "role": "왜"},
@@ -204,6 +205,33 @@ class IssueContractTest(unittest.TestCase):
         issue_index가 언급되는지만 확인한다.
         """
         self.assertIn("issue_index", SYSTEM)
+
+
+class BgQueryTest(unittest.TestCase):
+    """데일리도 스톡 사진 폴백에 도달할 수 있어야 한다.
+
+    bg_query가 없으면 build_background가 `if not bg_query: return None`으로
+    위키미디어·Unsplash를 통째로 건너뛴다. 데일리는 people도 없어서, 기사 사진이
+    실패하면 표지가 무조건 그래픽이 된다 — 2026-07-16·17 이틀 연속 그렇게 나갔다.
+    """
+
+    def test_스키마에_bg_query가_필수다(self):
+        self.assertEqual(SCHEMA["properties"]["bg_query"]["type"], "string")
+        self.assertIn("bg_query", SCHEMA["required"])
+
+    def test_모델의_bg_query가_briefing에_실린다(self):
+        briefing = summarize(sample_brief(), client=FakeClient(RATE_PAYLOAD))
+        self.assertEqual(briefing.bg_query, "Bank of Korea building")
+
+    def test_bg_query가_없으면_빈문자열로_저하한다(self):
+        """없어도 발행은 죽지 않는다 — 표지가 그래픽이 될 뿐이다."""
+        briefing = summarize(sample_brief(), client=FakeClient(PAYLOAD))
+        self.assertEqual(briefing.bg_query, "")
+        self.assertEqual(len(briefing.cards), 3)
+
+    def test_system이_bg_query에_추상어를_쓰지_말라고_지시한다(self):
+        self.assertIn("bg_query", SYSTEM)
+        self.assertIn("추상 개념은 쓰지 마십시오", SYSTEM)
 
 
 if __name__ == "__main__":

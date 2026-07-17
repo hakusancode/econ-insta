@@ -6,12 +6,21 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .collector import FeedSpec, GLOBAL_FEEDS, KR_FEEDS
+import requests
+
+from .backgrounds import build_background
+from .collector import FeedSpec, GLOBAL_FEEDS, KR_FEEDS, collect, now_kst
 from .config import PROJECT_ROOT
+from .ig_client import InstagramClient, InstagramError
+from .summarizer import summarize
+from . import renderer
 
 
 @dataclass(frozen=True)
@@ -52,3 +61,94 @@ def build_caption(
     lines += [f"📷 {credit}" for credit in credits]
     lines += ["", DISCLAIMER, "", HASHTAGS]
     return "\n".join(lines)
+
+
+# raw.githubusercontent.com은 push 직후 못 쓴다(실측) — 우리 GET은 200인데 메타 서버가
+# 가져갈 땐 아직 CDN에 없어 9004/2207052로 실패한다. 잠시 뒤 재시도하면 그대로 성공한다.
+RAW_BASE = "https://raw.githubusercontent.com/hakusancode/econ-insta/main"
+PUBLISH_ATTEMPTS = 6
+PUBLISH_DELAY_SECONDS = 20.0
+RETRYABLE_MARKERS = ("9004", "2207052")
+
+
+def publish_with_retry(publish, *, attempts: int = PUBLISH_ATTEMPTS,
+                       delay: float = PUBLISH_DELAY_SECONDS, sleep=time.sleep):
+    """CDN 미전파 오류만 재시도한다. 다른 오류(캡션 한도·토큰 만료)는 기다려도 안 낫는다."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return publish()
+        except InstagramError as exc:
+            if not any(m in str(exc) for m in RETRYABLE_MARKERS) or attempt == attempts:
+                raise
+            sleep(delay)
+
+
+def render_edition(edition: Edition) -> Path:
+    brief = collect(feeds=edition.feeds)
+    print(f"수집: 기사 {len(brief.articles)}건, 지표 {len(brief.quotes)}건")
+    for message in brief.errors:
+        print(f"  ! {message}")
+
+    briefing = summarize(brief)
+    print(f"훅: {briefing.headline}")
+
+    errors: list[str] = []
+    bg = build_background([], briefing.bg_query or "", errors=errors,
+                          issue=briefing.issue, headline=briefing.headline)
+    for message in errors:
+        print(f"  ! 배경: {message}")
+    print(f"배경: {'사진' if bg else '그래픽 폴백'}")
+
+    out = output_dir(edition, brief.collected_at)
+    renderer.render(briefing, brief.collected_at, out_dir=out,
+                    background=bg.image if bg else None)
+    caption = build_caption(briefing.headline, briefing.cards, brief.collected_at,
+                            bg.credits if bg else ())
+    (out / "caption.txt").write_text(caption, encoding="utf-8")
+    print(f"렌더 완료 → {out}")
+    return out
+
+
+def publish_edition(edition: Edition, *, sleep=time.sleep) -> int:
+    out = output_dir(edition, now_kst())
+    caption_path = out / "caption.txt"
+    images = sorted(out.glob("[0-9][0-9].jpg"))
+    if not caption_path.exists() or not images:
+        print(f"카드나 캡션이 없습니다: {out}")
+        return 1
+
+    rel = out.relative_to(PROJECT_ROOT).as_posix()
+    urls = [f"{RAW_BASE}/{rel}/{path.name}" for path in images]
+    for url in urls:
+        response = requests.get(url, timeout=20, allow_redirects=False)
+        if response.status_code != 200 or response.headers.get("Content-Type") != "image/jpeg":
+            print(f"호스팅 확인 실패 ({response.status_code}): {url}")
+            return 1
+
+    result = publish_with_retry(
+        lambda: InstagramClient().publish_images(
+            urls, caption_path.read_text(encoding="utf-8")),
+        sleep=sleep,
+    )
+    print(f"발행 완료: media_id={result.media_id}")
+    print(f"  {result.permalink}")
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="데일리 브리핑 렌더·발행")
+    parser.add_argument("--edition", choices=sorted(EDITIONS), required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--render", action="store_true")
+    group.add_argument("--publish", action="store_true")
+    args = parser.parse_args(argv)
+
+    edition = EDITIONS[args.edition]
+    if args.render:
+        render_edition(edition)
+        return 0
+    return publish_edition(edition)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

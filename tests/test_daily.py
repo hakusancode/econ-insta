@@ -7,7 +7,8 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from econ_insta.collector import KST
-from econ_insta.daily import EDITIONS, build_caption, output_dir
+from econ_insta.daily import EDITIONS, build_caption, output_dir, publish_with_retry
+from econ_insta.ig_client import InstagramError
 
 
 def card(title, source):
@@ -58,3 +59,36 @@ class BuildCaptionTest(unittest.TestCase):
         self.assertIn("#경제", caption)
         self.assertTrue(caption.startswith("훅"))
         self.assertIn("2026년 07월 17일 경제 브리핑", caption)
+
+
+class PublishWithRetryTest(unittest.TestCase):
+    """raw CDN 미전파(9004/2207052)만 재시도한다 — push 직후 우리가 GET하면 200인데
+    메타 서버가 가져갈 때 실패하는 실측 함정. 다른 오류는 기다려도 안 낫는다."""
+
+    def test_재시도_끝에_성공하면_결과를_돌려준다(self):
+        calls = {"n": 0}
+        def publish():
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise InstagramError("[9004/2207052] Only photo or video can be accepted")
+            return "media"
+        slept: list[float] = []
+        self.assertEqual(publish_with_retry(publish, sleep=slept.append), "media")
+        self.assertEqual(calls["n"], 3)
+        self.assertEqual(len(slept), 2)
+
+    def test_재시도_불가_오류는_즉시_던진다(self):
+        def publish():
+            raise InstagramError("캡션이 3000자로 한도를 넘습니다.")
+        slept: list[float] = []
+        with self.assertRaises(InstagramError):
+            publish_with_retry(publish, sleep=slept.append)
+        self.assertEqual(slept, [])   # 한 번도 안 기다렸다
+
+    def test_횟수를_다_쓰면_마지막_오류를_던진다(self):
+        def publish():
+            raise InstagramError("9004 계속 실패")
+        slept: list[float] = []
+        with self.assertRaises(InstagramError):
+            publish_with_retry(publish, attempts=3, sleep=slept.append)
+        self.assertEqual(len(slept), 2)   # attempts-1번 대기

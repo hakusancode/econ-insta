@@ -366,15 +366,18 @@ def dedupe(articles: list[Article]) -> list[Article]:
     return unique
 
 
-def collect_articles(
-    limit: int = 20,
+def gather_articles(
     feeds: dict[str, FeedSpec] | None = None,
     errors: list[str] | None = None,
 ) -> list[Article]:
-    """모든 피드에서 최근 기사를 모아 최신순으로 돌려준다.
+    """모든 피드에서 신선한 기사를 **전량** 모아 최신순으로 돌려준다.
 
-    수집 기간은 매체별로 다르다(주간지는 창을 넓게 잡는다). 중복 제거 후
-    매체별 쿼터를 적용하므로 물량이 많은 매체가 브리핑을 독식하지 않는다.
+    매체별 상한도 전체 상한도 적용하지 않는다 — 버리는 것은 이슈 랭킹 뒤에서 한다
+    (스펙 2026-07-17-collector-quota-design.md §4.1). 수집 기간은 매체별로 다르다
+    (주간지는 창을 넓게 잡는다).
+
+    최신순 정렬은 무엇을 버릴지 정하기 위한 것이 아니라, rank_issues의 탐욕적
+    클러스터링이 시드를 여는 순서를 결정론적으로 고정하기 위한 것이다.
     """
     specs = feeds or FEEDS
     session = requests.Session()
@@ -396,7 +399,21 @@ def collect_articles(
         gathered.extend(fresh)
 
     gathered.sort(key=lambda a: a.published, reverse=True)
-    return apply_quota(dedupe(gathered), specs)[:limit]
+    return dedupe(gathered)
+
+
+def collect_articles(
+    limit: int = 20,
+    feeds: dict[str, FeedSpec] | None = None,
+    errors: list[str] | None = None,
+) -> list[Article]:
+    """최신순 + 매체별 쿼터 + 전체 상한.
+
+    ai_brief·blog_brief 전용이다. **데일리 브리핑은 이 함수를 쓰지 않는다** —
+    쿼터가 중요도를 못 보고 그날의 뉴스를 버리기 때문이다(스펙 §1). 데일리는
+    gather_articles로 전량을 받아 rank_issues 뒤에서 자른다.
+    """
+    return apply_quota(gather_articles(feeds, errors), feeds or FEEDS)[:limit]
 
 
 def collect_quotes(

@@ -15,6 +15,7 @@ from econ_insta.collector import (
     clean_text,
     collect_articles,
     dedupe,
+    gather_articles,
     is_boilerplate,
     parse_feed,
     parse_pubdate,
@@ -322,6 +323,34 @@ class CollectArticlesTest(unittest.TestCase):
     def test_drops_stale_articles(self):
         self._patch(FakeSession({"https://a": rss(item(pub="Mon, 01 Jan 2024 00:00:00 +0900"))}))
         self.assertEqual(collect_articles(feeds={"매일경제": FeedSpec("https://a")}), [])
+
+    def test_gather는_매체별_상한을_적용하지_않는다(self):
+        """quota의 원래 목적(독식 방지)은 rank_issues의 크로스소스 점수가 대신한다.
+
+        gather는 모으기만 한다 — 버리는 것은 랭킹 뒤에서 한다(스펙 §4.1).
+        """
+        items = [item(title=f"기사{i}", link=f"https://x/{i}") for i in range(5)]
+        self._patch(FakeSession({"https://a": rss(*items)}))
+        feeds = {"매일경제": FeedSpec("https://a", max_age_hours=self.FOREVER, quota=2)}
+        self.assertEqual(len(gather_articles(feeds=feeds)), 5)
+
+    def test_gather는_신선도와_정형기사_필터는_유지한다(self):
+        """quota만 빠진다. 컷오프와 보일러플레이트 필터는 gather의 일이다."""
+        from email.utils import format_datetime
+
+        from econ_insta.collector import now_kst
+
+        # item()의 고정 pub 기본값은 시간이 지나며 썩는다(line 312 참고) — 여기서는
+        # 기본 max_age_hours=24 창을 검증해야 하므로 "지금"을 기준으로 신선하게 만든다.
+        recent = format_datetime(now_kst() - timedelta(hours=1))
+        feed = rss(
+            item(title="[인사] 한국수출입은행", link="https://x/1", pub=recent),
+            item(title="코스피 급등", link="https://x/2", pub=recent),
+            item(title="작년 기사", link="https://x/3", pub="Mon, 01 Jan 2024 00:00:00 +0900"),
+        )
+        self._patch(FakeSession({"https://a": feed}))
+        feeds = {"매일경제": FeedSpec("https://a", quota=99)}
+        self.assertEqual([a.title for a in gather_articles(feeds=feeds)], ["코스피 급등"])
 
 
 class QuoteFormatTest(unittest.TestCase):

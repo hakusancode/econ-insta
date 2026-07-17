@@ -38,6 +38,13 @@ PROMPT_ISSUES = 10
 """모델에 보일 이슈 수. collect()가 기사 전량을 싣게 되면서(스펙 §4.2) 자르는 지점이
 여기로 옮겨왔다. 상위 10개면 매체 2곳 이상짜리 진짜 이슈는 확실히 들어온다."""
 
+PROMPT_ARTICLES = 5
+"""이슈당 모델에 보일 기사 수. 카드 4장 서사에 충분하다.
+
+자르는 것은 프롬프트 표시분뿐이다 — Issue.articles는 온전히 남긴다.
+photos.candidates(issue)가 표지 사진 후보를 그 전 기사에서 뽑기 때문이다(스펙 §4.4).
+"""
+
 SYSTEM = f"""당신은 한국어 경제 카드뉴스의 에디터입니다.
 
 주어진 기사 목록과 시장지표로 오늘의 데일리 경제 브리핑을 만듭니다.
@@ -175,7 +182,7 @@ def render_article(article: Article, index: int) -> str:
 def render_issue(issue: Issue, index: int) -> str:
     sources = ", ".join(sorted(issue.sources))
     lines = [f"[이슈 {index}] 매체 {len(issue.sources)}곳({sources}), 기사 {len(issue.articles)}건"]
-    for article in issue.articles:
+    for article in issue.articles[:PROMPT_ARTICLES]:
         has_body = bool(article.summary)
         lines.append(f"  - ({article.source}) {article.title}  [본문:{'있음' if has_body else '없음'}]")
         if has_body:

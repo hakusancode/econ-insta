@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from econ_insta.collector import KST, Article, DailyBrief, Quote
 from econ_insta.issues import rank_issues
-from econ_insta.summarizer import summarize, build_prompt, SCHEMA, SYSTEM, SYSTEM, PROMPT_ISSUES
+from econ_insta.summarizer import summarize, build_prompt, render_issue, SCHEMA, SYSTEM, PROMPT_ISSUES
 
 
 def art(title, source, summary=""):
@@ -108,6 +108,18 @@ _TOPICS = [
 def many_issue_brief():
     """이슈 12개짜리 브리프. 프롬프트 상위 N개 자르기를 검증한다."""
     arts = [art(title, "매일경제") for title in _TOPICS]
+    quotes = [Quote(symbol="^KS11", name="코스피", price=2981.4, change_pct=-2.14)]
+    return DailyBrief(articles=arts, quotes=quotes, collected_at=datetime(2026, 7, 16), errors=[])
+
+
+def big_issue_brief():
+    """기사 8건이 한 이슈로 묶이는 브리프. 이슈당 나열 수 자르기를 검증한다.
+
+    제목의 핵심어(한은·기준금리·인상)가 전부 같아 rank_issues가 하나로 묶는다.
+    끝의 숫자는 _WORD_RE가 잡지 않으므로 핵심어에 영향이 없다.
+    """
+    sources = ["연합뉴스", "매일경제", "한국경제"]
+    arts = [art(f"한은 기준금리 인상 {i}", sources[i % 3]) for i in range(8)]
     quotes = [Quote(symbol="^KS11", name="코스피", price=2981.4, change_pct=-2.14)]
     return DailyBrief(articles=arts, quotes=quotes, collected_at=datetime(2026, 7, 16), errors=[])
 
@@ -293,6 +305,31 @@ class BgQueryTest(unittest.TestCase):
     def test_system이_bg_query에_추상어를_쓰지_말라고_지시한다(self):
         self.assertIn("bg_query", SYSTEM)
         self.assertIn("추상 개념은 쓰지 마십시오", SYSTEM)
+
+
+class RenderIssueSliceTest(unittest.TestCase):
+    """이슈당 기사 나열 수 (스펙 §4.4)."""
+
+    def setUp(self):
+        self.brief = big_issue_brief()
+        self.issues = rank_issues(self.brief.articles)
+        self.assertEqual(len(self.issues), 1)                 # 픽스처 방어
+        self.assertEqual(len(self.issues[0].articles), 8)     # 픽스처 방어
+
+    def test_기사를_5건까지만_나열한다(self):
+        block = render_issue(self.issues[0], 1)
+        self.assertEqual(block.count("  - ("), 5)
+
+    def test_헤더는_전체_기사_수를_말한다(self):
+        """5건만 보이지만 '8건짜리 이슈'라는 크기 신호는 모델이 봐야 한다."""
+        block = render_issue(self.issues[0], 1)
+        self.assertIn("기사 8건", block)
+
+    def test_렌더가_issue_articles를_자르지_않는다(self):
+        """photos.candidates(issue)가 이 리스트에서 표지 사진 후보를 뽑는다 —
+        파괴적으로 자르면 4단계가 확보한 사진 도달률이 떨어진다."""
+        build_prompt(self.brief, self.issues)
+        self.assertEqual(len(self.issues[0].articles), 8)
 
 
 if __name__ == "__main__":

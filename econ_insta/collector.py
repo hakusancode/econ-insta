@@ -47,8 +47,6 @@ class FeedSpec:
     """
 
 
-# 주의: WSJ의 옛 주소(feeds.a.dj.com)는 HTTP 200을 주지만 2025-01에 갱신이 멈춘 죽은 피드다.
-# 살아 있는 것은 feeds.content.dowjones.io 쪽이다.
 KR_FEEDS: dict[str, FeedSpec] = {
     # 연합뉴스는 한때 제외했으나 사용자 지시로 복귀(2026-07-14). 앞으로 빼지 말 것.
     # 경제 섹션은 economy.xml이고 본문(description)이 온다 — 한경과 달리 카드 소재가 된다.
@@ -57,6 +55,8 @@ KR_FEEDS: dict[str, FeedSpec] = {
     "매일경제": FeedSpec("https://www.mk.co.kr/rss/30100041/"),
 }
 
+# 주의: WSJ의 옛 주소(feeds.a.dj.com)는 HTTP 200을 주지만 2025-01에 갱신이 멈춘 죽은 피드다.
+# 살아 있는 것은 feeds.content.dowjones.io 쪽이다.
 GLOBAL_FEEDS: dict[str, FeedSpec] = {
     "WSJ": FeedSpec(
         "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",

@@ -58,7 +58,9 @@ EDITIONS = {"kr": Edition("kr", KR_FEEDS), "global": Edition("global", GLOBAL_FE
 - 흐름: `collect(feeds=edition.feeds)` → `summarize(brief)` → `build_background([], briefing.bg_query or "",
   issue=briefing.issue, headline=briefing.headline)` → `renderer.render(briefing, brief.collected_at,
   out_dir=..., background=bg.image if bg else None)` → `build_caption(...)` → `caption.txt` 저장.
-- **`build_caption(briefing, when, credits) -> str` (데일리 전용, 신규)** — 지금까지 없어서 손 조립했다.
+- **`build_caption(headline, cards, when, credits=()) -> str` (데일리 전용, 신규)** — 지금까지 없어서 손 조립했다.
+  Briefing 통째가 아니라 headline·cards를 받는다(계획에서 정제): cards는 `.title`·`.source`만 읽는
+  덕 타이핑이라 테스트가 Card 생성자에 묶이지 않는다.
   - 복합 출처 dedup: `{s.strip() for card in cards for s in card.source.split("·") if s.strip()}`
     (2026-07-17 오전 발행분의 "매일경제 · 매일경제·시장지표" 중복 버그의 수정판)
   - **credits 배선(원장 필수 항목)**: `Background.credits`의 각 항목을 `📷 {credit}` 줄로.

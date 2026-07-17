@@ -1,0 +1,66 @@
+# 데일리 브리핑 자동 발행 (스펙 docs/superpowers/specs/2026-07-17-daily-cron-design.md)
+# KST 07:30 = 해외판(GLOBAL_FEEDS), KST 19:00 = 국내판(KR_FEEDS). GitHub cron은 UTC다.
+# 실패하면 그날 그 에디션은 건너뛴다 — GitHub이 소유자에게 메일을 보낸다.
+
+name: Daily briefing
+
+on:
+  schedule:
+    - cron: "30 22 * * *"   # KST 다음날 07:30 — 해외판
+    - cron: "0 10 * * *"    # KST 19:00 — 국내판
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: "발행 에디션"
+        type: choice
+        options: [kr, global]
+        required: true
+
+permissions:
+  contents: write   # 렌더 결과(out/)를 main에 커밋·push한다
+
+concurrency: daily-briefing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: pip install -r requirements.txt
+
+      - name: Determine edition
+        id: edition
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "edition=${{ inputs.edition }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "30 22 * * *" ]; then
+            echo "edition=global" >> "$GITHUB_OUTPUT"
+          else
+            echo "edition=kr" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m econ_insta.daily --edition "${{ steps.edition.outputs.edition }}" --render
+
+      # out/은 .gitignore라 -f가 필요하다. 발행이 raw URL을 요구하므로 push가 먼저다.
+      - name: Host rendered cards
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f out/
+          git commit -m "out: daily ${{ steps.edition.outputs.edition }} $(TZ=Asia/Seoul date +%F) [skip ci]"
+          git pull --rebase origin main
+          git push origin main
+
+      - name: Publish
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: python -m econ_insta.daily --edition "${{ steps.edition.outputs.edition }}" --publish

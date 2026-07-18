@@ -143,13 +143,25 @@ HANJA_REPLACEMENTS = {
     "美": "미국", "中": "중국", "日": "일본", "韓": "한국", "英": "영국",
     "獨": "독일", "佛": "프랑스", "伊": "이탈리아", "印": "인도", "露": "러시아",
     "亞": "아시아", "歐": "유럽",
+    # 접사형 관용 한자는 음독으로 푼다 — "뉴욕發"의 發이 tofu로 발행된 실제 사고(2026-07-18 아침 크론).
+    "發": "발", "對": "대", "株": "주",
 }
 _HANJA_RE = re.compile("|".join(HANJA_REPLACEMENTS))
+_CJK_RE = re.compile(r"[一-鿿]")
 
 
 def replace_hanja(text: str) -> str:
     """렌더 폰트가 모르는 관용 한자 약칭을 한글로 푼다."""
     return _HANJA_RE.sub(lambda m: HANJA_REPLACEMENTS[m.group()], text)
+
+
+def residual_hanja(text: str) -> list[str]:
+    """치환표를 통과한 뒤에도 남는 한자. 하나라도 있으면 렌더에서 반드시 tofu가 된다.
+
+    SYSTEM의 한자 금지 지시만으로는 못 막는다 — 지시가 있는데도 "뉴욕發"이 나왔다
+    (프롬프트 규칙 하나로 믿지 말 것, 이 저장소 세 번째 재현). audit가 이걸 문제로
+    올려 재생성 루프에 태우고, 그래도 남으면 카드 폐기·발행 중단으로 이어진다."""
+    return sorted(set(_CJK_RE.findall(replace_hanja(text))))
 
 
 @dataclass(frozen=True)
@@ -266,6 +278,14 @@ def audit(payload: dict, source: str, quotes: list[Quote] | None = None) -> dict
     if bad_headline:
         problems["headline"] = bad_headline
 
+    # 치환표 밖 한자는 렌더에서 무조건 tofu다 — 재생성으로 돌려보낸다.
+    for field in ("headline", "indicator_note"):
+        hanja = residual_hanja(payload[field])
+        if hanja:
+            problems.setdefault(field, []).append(
+                f"한자 사용 금지 — 렌더 폰트에 글리프가 없어 깨집니다. 한글로 푸십시오: {' '.join(hanja)}"
+            )
+
     # 지표에서 파생된 문장만 검사한다. 카드 본문에는 전망·인용이 섞여 오탐이 난다.
     reversed_fx = wrong_won_direction(payload["indicator_note"], usdkrw_change(quotes or []))
     if reversed_fx:
@@ -275,6 +295,11 @@ def audit(payload: dict, source: str, quotes: list[Quote] | None = None) -> dict
         bad = unsupported_amounts(f"{card['title']} {card['body']}", source)
         if bad:
             problems[f"card:{index}"] = bad
+        hanja = residual_hanja(f"{card['title']} {card['body']}")
+        if hanja:
+            problems.setdefault(f"card:{index}", []).append(
+                f"한자 사용 금지 — 렌더 폰트에 글리프가 없어 깨집니다. 한글로 푸십시오: {' '.join(hanja)}"
+            )
 
     return problems
 

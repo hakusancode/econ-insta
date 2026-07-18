@@ -6,7 +6,10 @@ from types import SimpleNamespace
 
 from econ_insta.collector import KST, Article, DailyBrief, Quote
 from econ_insta.issues import rank_issues
-from econ_insta.summarizer import summarize, build_prompt, render_issue, SCHEMA, SYSTEM, PROMPT_ISSUES
+from econ_insta.summarizer import (
+    SCHEMA, SYSTEM, PROMPT_ISSUES, SummarizeError,
+    audit, build_prompt, render_issue, replace_hanja, summarize,
+)
 
 
 def art(title, source, summary=""):
@@ -150,6 +153,41 @@ class HanjaTest(unittest.TestCase):
     def test_system이_한자를_금지한다(self):
         """치환표는 아는 한자만 안다 — 모르는 한자가 새는 것은 프롬프트가 1차로 막아야 한다."""
         self.assertIn("한자", SYSTEM)
+
+    def test_관용_접사_한자도_풀린다(self):
+        """2026-07-18 아침 크론 실제 사고 — "뉴욕發"의 發이 tofu로 발행됨. SYSTEM 금지는
+        모델이 안 지켰다(이 저장소 세 번째 재현: 프롬프트 규칙 하나로 믿지 말 것)."""
+        self.assertEqual(replace_hanja("뉴욕發 매도 공포"), "뉴욕발 매도 공포")
+        self.assertEqual(replace_hanja("對중국 수출"), "대중국 수출")
+
+    def test_audit가_치환표_밖_한자를_잡는다(self):
+        """표에 없는 한자는 재생성 루프로 보내야 한다 — 렌더까지 가면 무조건 tofu다."""
+        payload = {
+            "headline": "반도체 訥변 공포",   # 訥: 표에 없는 한자
+            "indicator_note": "위험 회피가 짙어졌다",
+            "cards": [{"title": "무슨 일", "body": "증시가 밀렸다.", "source": "연합뉴스"}],
+        }
+        problems = audit(payload, "자료 원문", quotes=[])
+        self.assertIn("headline", problems)
+        self.assertIn("訥", " ".join(problems["headline"]))
+
+    def test_audit는_치환표가_아는_한자를_넘어간다(self):
+        """美는 replace_hanja가 미국으로 풀므로 재생성까지 갈 필요 없다."""
+        payload = {
+            "headline": "美 증시 급락",
+            "indicator_note": "위험 회피가 짙어졌다",
+            "cards": [{"title": "무슨 일", "body": "中 증시가 밀렸다.", "source": "연합뉴스"}],
+        }
+        problems = audit(payload, "자료 원문", quotes=[])
+        self.assertNotIn("headline", problems)
+        self.assertNotIn("card:0", problems)
+
+    def test_한자가_재생성에도_남으면_발행하지_않는다(self):
+        """깨진 표지가 나가는 것보다 그날을 건너뛰는 게 낫다(FakeClient는 재시도에도
+        같은 payload를 돌려주므로 재생성 실패 경로가 그대로 재현된다)."""
+        payload = dict(HANJA_PAYLOAD, headline="뉴욕訥 매도 공포")
+        with self.assertRaises(SummarizeError):
+            summarize(sample_brief(), client=FakeClient(payload))
 
 
 class SummarizeSingleIssueTest(unittest.TestCase):

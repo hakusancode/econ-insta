@@ -160,6 +160,18 @@ class SummarizeTest(unittest.TestCase):
         with self.assertRaises(SummarizeError):
             summarize(brief(), client=FakeClient(payload(headline="가" * (HEADLINE_MAX + 1))))
 
+    def test_긴_headline은_재생성_기회를_받는다(self):
+        """2026-07-18 실제 사고 — 25자 훅이 이틀 연속 크론을 즉사시켰다(재생성 0회).
+        한자→한글 풀어쓰기(美→미국)가 훅을 길게 만든 뒤로 한 글자 초과가 흔해졌는데,
+        길이 위반만 숫자·한자와 달리 재생성 루프를 안 탔다. 이제 1회 재생성으로 돌린다."""
+        long_payload = payload(headline="가" * (HEADLINE_MAX + 1))
+        ok_payload = payload(headline="짧은 훅")
+        client = FakeClient([long_payload, ok_payload])
+        briefing = summarize(brief(), client=client)
+        self.assertEqual(briefing.headline, "짧은 훅")
+        self.assertEqual(client.calls, 2)
+        self.assertIn("줄이십시오", client.prompts[1])   # 재생성 프롬프트에 길이 피드백이 실렸다
+
     def test_long_body_raises(self):
         with self.assertRaises(SummarizeError):
             summarize(brief(), client=FakeClient(payload(body="가" * (CARD_BODY_MAX + 1))))

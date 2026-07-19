@@ -240,19 +240,18 @@ def build_prompt(brief: DailyBrief, issues: list[Issue]) -> str:
 
 
 def _validate(payload: dict) -> None:
-    """스키마로 강제할 수 없는 제약(개수·길이)을 확인한다."""
+    """스키마로 강제할 수 없는 구조 제약(개수·출처)만 확인한다.
+
+    길이는 여기서 보지 않는다 — 즉사시키면 재생성 기회가 없다. 2026-07-18 크론이
+    25자 훅(한도 24자)으로 이틀 연속 즉사했다: 한자→한글 풀어쓰기(美→미국)가 훅을
+    길게 만든 뒤로 한 글자 초과가 흔해졌는데, 길이 위반만 숫자·한자와 달리 audit의
+    재생성 루프를 안 탔다. 길이는 audit()가 잡아 재생성으로 돌린다.
+    """
     cards = payload["cards"]
     if not MIN_CARDS <= len(cards) <= MAX_CARDS:
         raise SummarizeError(f"카드가 {len(cards)}장입니다 ({MIN_CARDS}~{MAX_CARDS}장이어야 함).")
 
-    if len(payload["headline"]) > HEADLINE_MAX:
-        raise SummarizeError(f"headline이 {len(payload['headline'])}자로 한도({HEADLINE_MAX}자)를 넘습니다.")
-
     for i, card in enumerate(cards, 1):
-        if len(card["title"]) > CARD_TITLE_MAX:
-            raise SummarizeError(f"{i}번 카드 title이 {len(card['title'])}자로 한도를 넘습니다.")
-        if len(card["body"]) > CARD_BODY_MAX:
-            raise SummarizeError(f"{i}번 카드 body가 {len(card['body'])}자로 한도를 넘습니다.")
         if not card["source"].strip():
             raise SummarizeError(f"{i}번 카드에 출처가 없습니다.")
 
@@ -286,6 +285,12 @@ def audit(payload: dict, source: str, quotes: list[Quote] | None = None) -> dict
                 f"한자 사용 금지 — 렌더 폰트에 글리프가 없어 깨집니다. 한글로 푸십시오: {' '.join(hanja)}"
             )
 
+    # 길이도 재생성 대상이다 — 즉사시키면 기회가 없다(2026-07-18 이틀 연속 크론 즉사).
+    if len(payload["headline"]) > HEADLINE_MAX:
+        problems.setdefault("headline", []).append(
+            f"{len(payload['headline'])}자 — {HEADLINE_MAX}자 이내로 줄이십시오"
+        )
+
     # 지표에서 파생된 문장만 검사한다. 카드 본문에는 전망·인용이 섞여 오탐이 난다.
     reversed_fx = wrong_won_direction(payload["indicator_note"], usdkrw_change(quotes or []))
     if reversed_fx:
@@ -299,6 +304,14 @@ def audit(payload: dict, source: str, quotes: list[Quote] | None = None) -> dict
         if hanja:
             problems.setdefault(f"card:{index}", []).append(
                 f"한자 사용 금지 — 렌더 폰트에 글리프가 없어 깨집니다. 한글로 푸십시오: {' '.join(hanja)}"
+            )
+        if len(card["title"]) > CARD_TITLE_MAX:
+            problems.setdefault(f"card:{index}", []).append(
+                f"title {len(card['title'])}자 — {CARD_TITLE_MAX}자 이내로 줄이십시오"
+            )
+        if len(card["body"]) > CARD_BODY_MAX:
+            problems.setdefault(f"card:{index}", []).append(
+                f"body {len(card['body'])}자 — {CARD_BODY_MAX}자 이내로 줄이십시오"
             )
 
     return problems

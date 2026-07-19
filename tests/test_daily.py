@@ -154,6 +154,43 @@ class HostingReadyTest(unittest.TestCase):
                                        attempts=2, sleep=lambda _s: None, get=get))
 
 
+class RenderEditionCleanupTest(unittest.TestCase):
+    """재렌더 전에 이전 렌더의 NN.jpg 잔재를 지워야 한다.
+
+    2026-07-19 실사고 — 아침 CI가 6장(카드 4)을 렌더한 같은 날짜 디렉터리에 오후 재렌더가
+    5장(카드 3)을 덮어쓰자 옛 06.jpg(지표 카드)가 남아 캐러셀에 지표 카드가 두 장 발행됐다.
+    """
+
+    def test_재렌더가_이전_카드_잔재를_지운다(self):
+        import econ_insta.daily as mod
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            when = datetime(2026, 7, 19, 11, 0, tzinfo=KST)
+            out = root / "out" / "2026-07-19-kr"
+            out.mkdir(parents=True)
+            (out / "06.jpg").write_bytes(b"stale-indicator-card")
+
+            fake_brief = SimpleNamespace(articles=[1], quotes=[], errors=[], collected_at=when)
+            fake_briefing = SimpleNamespace(
+                headline="훅", cards=[card("제목", "연합뉴스")], issue=None, bg_query="")
+
+            for name, value in [
+                ("PROJECT_ROOT", root),
+                ("collect", lambda feeds=None: fake_brief),
+                ("summarize", lambda brief: fake_briefing),
+                ("build_background", lambda *a, **k: None),
+            ]:
+                self.addCleanup(setattr, mod, name, getattr(mod, name))
+                setattr(mod, name, value)
+            self.addCleanup(setattr, mod.renderer, "render", mod.renderer.render)
+            mod.renderer.render = lambda *a, **k: None
+
+            mod.render_edition(mod.EDITIONS["kr"])
+            self.assertFalse((out / "06.jpg").exists())
+            self.assertTrue((out / "caption.txt").exists())
+
+
 class PublishEditionChecksumTest(unittest.TestCase):
     """publish_edition이 로컬 파일 해시를 hosting_ready에 실제로 배선하는지.
 

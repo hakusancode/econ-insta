@@ -130,6 +130,11 @@ def render_edition(edition: Edition) -> Path:
     print(f"배경: {'사진' if bg else '그래픽 폴백'}")
 
     out = output_dir(edition, brief.collected_at)
+    # 재렌더 전에 이전 렌더의 카드 잔재를 지운다 — 카드 수가 줄면 옛 NN.jpg가 남아
+    # 같은 캐러셀에 옛 카드가 섞여 발행된다(2026-07-19 지표 카드 중복 실사고).
+    if out.exists():
+        for stale in out.glob("[0-9][0-9].jpg"):
+            stale.unlink()
     renderer.render(briefing, brief.collected_at, out_dir=out,
                     background=bg.image if bg else None)
     caption = build_caption(briefing.headline, briefing.cards, brief.collected_at,

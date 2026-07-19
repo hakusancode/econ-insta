@@ -106,5 +106,15 @@
     "credit": "Cabinet Public Relations Office of the Cabinet Secretariat (Wikimedia Commons, CC BY 4.0)",
     "source": "https://commons.wikimedia.org/wiki/File:Kazuo_Ueda_on_October_2,_2024.jpg",
     "license": "CC BY 4.0"
+  },
+  "warsh": {
+    "name": "케빈 워시",
+    "aliases": [
+      "케빈 워시"
+    ],
+    "file": "warsh.jpg",
+    "credit": "Federalreserve (Wikimedia Commons, Public domain)",
+    "source": "https://commons.wikimedia.org/wiki/File:Official_portrait_of_Kevin_M._Warsh_(cropped).jpg",
+    "license": "Public domain"
   }
 }

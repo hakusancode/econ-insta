@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>reel cover</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; }
+  body {
+    background: #04060B;
+    color: #F2F5FA;
+    font-family: "Noto Sans KR", sans-serif;
+    position: relative;
+  }
+  /* 은은한 비네트 + 중앙 블루 잔광 */
+  .atmo {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 900px 700px at 50% 44%, rgba(38, 92, 200, 0.20), transparent 70%),
+      radial-gradient(ellipse 1400px 1100px at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+  /* 전광판 스캔라인 — 아주 약하게 */
+  .scan {
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, rgba(255,255,255,0.016) 0 2px, transparent 2px 6px);
+  }
+  .frame { position: absolute; inset: 0; padding: 96px; }
+
+  .kicker { color: #F5C542; font-weight: 700; font-size: 44px; letter-spacing: 0.02em; margin-top: 40px; }
+  .date { color: #8B93A6; font-weight: 400; font-size: 34px; margin-top: 18px; }
+
+  .board { position: absolute; left: 0; right: 0; top: 400px; text-align: center; }
+  .eyebrow { color: #C8D2E4; font-size: 54px; font-weight: 500; letter-spacing: 0.28em; margin-left: 0.28em; }
+  .tri {
+    width: 0; height: 0; margin: 40px auto 0;
+    border-left: 76px solid transparent;
+    border-right: 76px solid transparent;
+    border-top: 120px solid #3D8BFF;
+    filter: drop-shadow(0 0 34px rgba(85,160,255,0.75));
+  }
+  .pct {
+    font-family: "Chakra Petch", "Noto Sans KR", sans-serif;
+    font-weight: 700; font-size: 300px; line-height: 1; margin-top: 8px;
+    letter-spacing: -0.02em;
+    color: #55A0FF;
+    text-shadow:
+      0 0 26px rgba(85,160,255,0.85),
+      0 0 90px rgba(61,139,255,0.45),
+      0 0 180px rgba(61,139,255,0.30);
+  }
+  .pct .minus { color: #7FB6FF; }
+
+  /* 시세판 행 */
+  .row {
+    margin: 64px auto 0; width: 760px;
+    border-top: 2px solid rgba(139,147,166,0.28);
+    border-bottom: 2px solid rgba(139,147,166,0.28);
+    padding: 30px 0 28px;
+  }
+  .row .name { font-size: 42px; font-weight: 700; color: #F2F5FA; letter-spacing: 0.08em; }
+  .row .quote {
+    font-family: "Chakra Petch", sans-serif;
+    margin-top: 16px; font-size: 46px; font-weight: 600; color: #55A0FF;
+    text-shadow: 0 0 18px rgba(85,160,255,0.55);
+  }
+  .row .quote .won { font-family: "Noto Sans KR", sans-serif; font-size: 34px; color: #8B93A6; text-shadow: none; }
+  .row .sub { margin-top: 14px; font-size: 30px; color: #8B93A6; font-weight: 400; }
+
+  .headline {
+    position: absolute; left: 96px; right: 96px; bottom: 300px;
+  }
+  .headline .bar { width: 140px; height: 7px; background: #F5C542; margin-bottom: 44px; }
+  .headline h1 { font-size: 88px; font-weight: 900; line-height: 1.3; letter-spacing: -0.01em; }
+  .footer { position: absolute; left: 96px; bottom: 150px; color: #8B93A6; font-size: 34px; }
+</style>
+</head>
+<body>
+  <div class="atmo"></div>
+  <div class="scan"></div>
+  <div class="frame">
+    <div class="kicker">종목 이슈 브리핑</div>
+    <div class="date">2026년 07월 20일</div>
+
+    <div class="board">
+      <div class="eyebrow">한&nbsp;달&nbsp;새</div>
+      <div class="tri"></div>
+      <div class="pct"><span class="minus">-</span>34%</div>
+      <div class="row">
+        <div class="name">SK하이닉스</div>
+        <div class="quote">1,764,000<span class="won">원</span>&nbsp;&nbsp;▼ 78,000&nbsp;(-4.23%)</div>
+        <div class="sub">2026.07.20 종가 · 매도 사이드카 발동</div>
+      </div>
+    </div>
+
+    <div class="headline">
+      <div class="bar"></div>
+      <h1>폭락은 왜<br>멈추지 않나</h1>
+    </div>
+    <div class="footer">넘겨서 확인하세요 →</div>
+  </div>
+</body>
+</html>

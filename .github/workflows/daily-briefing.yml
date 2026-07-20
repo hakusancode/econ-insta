@@ -1,13 +1,19 @@
 # 데일리 브리핑 자동 발행 (스펙 docs/superpowers/specs/2026-07-17-daily-cron-design.md)
 # KST 07:30 = 해외판(GLOBAL_FEEDS), KST 19:00 = 국내판(KR_FEEDS). GitHub cron은 UTC다.
-# 실패하면 그날 그 에디션은 건너뛴다 — GitHub이 소유자에게 메일을 보낸다.
+#
+# 에디션마다 크론이 두 개다 — GitHub은 스케줄을 늦추거나 통째로 빼먹는다
+# (2026-07-19 국내판 66분 지연, 2026-07-20 국내판 미실행). 25분 뒤 예비 크론이
+# 한 번 더 두드리고, 발행 성공 마커(published.txt)가 있으면 그대로 빠진다.
+# 그래도 둘 다 실패하면 그날 그 에디션은 건너뛴다 — GitHub이 소유자에게 메일을 보낸다.
 
 name: Daily briefing
 
 on:
   schedule:
     - cron: "30 22 * * *"   # KST 다음날 07:30 — 해외판
+    - cron: "55 22 * * *"   # 해외판 예비
     - cron: "0 10 * * *"    # KST 19:00 — 국내판
+    - cron: "25 10 * * *"   # 국내판 예비
   workflow_dispatch:
     inputs:
       edition:
@@ -37,30 +43,58 @@ jobs:
         id: edition
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "edition=${{ inputs.edition }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "30 22 * * *" ]; then
-            echo "edition=global" >> "$GITHUB_OUTPUT"
+            edition="${{ inputs.edition }}"
           else
-            echo "edition=kr" >> "$GITHUB_OUTPUT"
+            case "${{ github.event.schedule }}" in
+              *" 22 * * *") edition=global ;;
+              *)            edition=kr ;;
+            esac
+          fi
+          echo "edition=$edition" >> "$GITHUB_OUTPUT"
+          echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
+
+      # 예비 크론(그리고 실수로 겹친 수동 실행)이 같은 에디션을 두 번 발행하지 않게 한다.
+      # 마커는 Publish까지 끝난 뒤에만 커밋되므로, 렌더만 되고 발행이 죽은 날은
+      # 예비 크론이 처음부터 다시 돈다. 강제로 다시 발행하려면 마커를 지우고 dispatch.
+      - name: Skip if already published
+        id: guard
+        run: |
+          marker="out/${{ steps.edition.outputs.date }}-${{ steps.edition.outputs.edition }}/published.txt"
+          if [ -f "$marker" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "오늘 ${{ steps.edition.outputs.edition }}판은 이미 발행됨 ($(cat "$marker")) — 종료"
           fi
 
       - name: Render
+        if: steps.guard.outputs.skip != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m econ_insta.daily --edition "${{ steps.edition.outputs.edition }}" --render
 
       # out/은 .gitignore라 -f가 필요하다. 발행이 raw URL을 요구하므로 push가 먼저다.
       - name: Host rendered cards
+        if: steps.guard.outputs.skip != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f out/
-          git commit -m "out: daily ${{ steps.edition.outputs.edition }} $(TZ=Asia/Seoul date +%F) [skip ci]"
+          git commit -m "out: daily ${{ steps.edition.outputs.edition }} ${{ steps.edition.outputs.date }} [skip ci]"
           git pull --rebase origin main
           git push origin main
 
       - name: Publish
+        if: steps.guard.outputs.skip != 'true'
         env:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python -m econ_insta.daily --edition "${{ steps.edition.outputs.edition }}" --publish
+
+      - name: Mark published
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          marker="out/${{ steps.edition.outputs.date }}-${{ steps.edition.outputs.edition }}/published.txt"
+          date -u +%FT%TZ > "$marker"
+          git add -f "$marker"
+          git commit -m "out: ${{ steps.edition.outputs.edition }} ${{ steps.edition.outputs.date }} 발행 마커 [skip ci]"
+          git pull --rebase origin main
+          git push origin main

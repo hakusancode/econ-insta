@@ -27,8 +27,11 @@ import requests
 from .config import _load_dotenv
 from .issues import Issue, keywords
 
-NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
-DATALAB_URL = "https://openapi.naver.com/v1/datalab/search"
+# 네이버 오픈API는 developers.naver.com에서 네이버 클라우드 플랫폼(API HUB)으로
+# 이관됐다(2026-07 실측: 구 openapi.naver.com 키는 401). 도메인이 서로 다른 것에
+# 주의 — 뉴스 검색은 naverapihub, 데이터랩은 naveropenapi 게이트웨이다.
+NEWS_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news"
+DATALAB_URL = "https://naveropenapi.apigw.ntruss.com/datalab/v1/search"
 TIMEOUT = 15
 
 RERANK_LIMIT = 10   # 뉴스 검색을 붙일 이슈 수 (= summarizer.PROMPT_ISSUES)
@@ -69,7 +72,7 @@ def _headers() -> dict[str, str]:
     creds = _credentials()
     if creds is None:
         raise NaverError("NAVER_CLIENT_ID/NAVER_CLIENT_SECRET 이 없습니다 (.env)")
-    return {"X-Naver-Client-Id": creds[0], "X-Naver-Client-Secret": creds[1]}
+    return {"X-NCP-APIGW-API-KEY-ID": creds[0], "X-NCP-APIGW-API-KEY": creds[1]}
 
 
 def news_signal(query: str, session: requests.Session | None = None) -> NewsSignal:

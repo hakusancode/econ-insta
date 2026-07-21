@@ -53,14 +53,16 @@ jobs:
           echo "edition=$edition" >> "$GITHUB_OUTPUT"
           echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
 
-      # 예비 크론(그리고 실수로 겹친 수동 실행)이 같은 에디션을 두 번 발행하지 않게 한다.
+      # 마커는 **자동 크론끼리의** 중복만 막는다(본편 성공 → 예비 크론 스킵).
+      # 수동(dispatch) 실행은 마커를 확인도 기록도 하지 않는다 — 사용자가 낮에
+      # 따로 올려도 그날 저녁 크론은 그대로 발행된다(2026-07-21 사용자 지시).
       # 마커는 Publish까지 끝난 뒤에만 커밋되므로, 렌더만 되고 발행이 죽은 날은
-      # 예비 크론이 처음부터 다시 돈다. 강제로 다시 발행하려면 마커를 지우고 dispatch.
+      # 예비 크론이 처음부터 다시 돈다.
       - name: Skip if already published
         id: guard
         run: |
           marker="out/${{ steps.edition.outputs.date }}-${{ steps.edition.outputs.edition }}/published.txt"
-          if [ -f "$marker" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "$marker" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "오늘 ${{ steps.edition.outputs.edition }}판은 이미 발행됨 ($(cat "$marker")) — 종료"
           fi
@@ -93,7 +95,7 @@ jobs:
         run: python -m econ_insta.daily --edition "${{ steps.edition.outputs.edition }}" --publish
 
       - name: Mark published
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && github.event_name == 'schedule'
         run: |
           marker="out/${{ steps.edition.outputs.date }}-${{ steps.edition.outputs.edition }}/published.txt"
           date -u +%FT%TZ > "$marker"

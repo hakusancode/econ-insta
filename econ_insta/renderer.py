@@ -496,14 +496,8 @@ def _render_cover_photo(
     draw = ImageDraw.Draw(image)
     inner = WIDTH - MARGIN * 2
 
-    # 사진 위에서는 어떤 테마든 흰 글씨여야 읽힌다(어두운 스크림으로 눌러둔 위에 얹으므로).
-    # 보조 텍스트(날짜)도 MUTED로 두면 밝은 하늘 위에서 사라진다 — 실제로 삼성 사옥
-    # 표지에서 날짜가 안 보였다. 사진 위에서는 한 단계 밝게 쓴다.
-    kicker_pill(draw, (MARGIN, MARGIN), kicker, fonts.at(38, weight="bold"), theme.accent)
-    draw.text(
-        (MARGIN, MARGIN + 100), f"{when:%Y년 %m월 %d일}", font=fonts.at(30), fill=PHOTO_SUB
-    )
-
+    # 킥커·날짜 스탬프는 그리지 않는다(2026-07-21 사용자 지시 — 표지를 헤드라인·
+    # 이미지에 온전히 내준다). kicker 파라미터는 호출부 호환을 위해 남겨둔다.
     footer_top = HEIGHT - MARGIN - 40
     lines, title_font, step = _fit_headline(
         headline, fonts, inner, footer_top - 150 - MARGIN, start_size=104, min_size=48
@@ -529,11 +523,7 @@ def _render_cover_dark(
     draw = ImageDraw.Draw(image)
     inner = WIDTH - MARGIN * 2
 
-    kicker_pill(draw, (MARGIN, MARGIN), kicker, fonts.at(38, weight="bold"), theme.accent)
-    draw.text(
-        (MARGIN, MARGIN + 100), f"{when:%Y년 %m월 %d일}", font=fonts.at(30), fill=theme.muted
-    )
-
+    # 킥커·날짜 스탬프는 그리지 않는다(사진 표지와 동일 — 2026-07-21 사용자 지시).
     footer_top = HEIGHT - MARGIN - 40
     lines, title_font, step = _fit_headline(
         headline, fonts, inner, footer_top - 150 - MARGIN, start_size=104, min_size=48

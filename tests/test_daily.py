@@ -178,8 +178,10 @@ class RenderEditionCleanupTest(unittest.TestCase):
             for name, value in [
                 ("PROJECT_ROOT", root),
                 ("collect", lambda feeds=None: fake_brief),
-                ("summarize", lambda brief: fake_briefing),
+                ("summarize", lambda brief, issues=None: fake_briefing),
                 ("build_background", lambda *a, **k: None),
+                ("rank_issues", lambda articles: []),
+                ("naver_rerank", lambda issues: issues),
             ]:
                 self.addCleanup(setattr, mod, name, getattr(mod, name))
                 setattr(mod, name, value)

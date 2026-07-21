@@ -129,6 +129,36 @@ class RerankTest(unittest.TestCase):
         self.assertEqual(naver.rerank([first, second], session=session), [second, first])
 
 
+class BudgetTest(unittest.TestCase):
+    """일일 무료 한도 보호 — 예산 소진 시 호출 없이 NaverError, rerank는 저하."""
+
+    def setUp(self):
+        self._saved = dict(naver._calls)
+        self.addCleanup(naver._calls.update, self._saved)
+
+    @patch.dict(os.environ, KEYS)
+    def test_예산_소진이면_호출_없이_NaverError(self):
+        from datetime import date
+        naver._calls.update(date=date.today(), count=naver.MAX_CALLS_PER_DAY)
+        with self.assertRaises(naver.NaverError):
+            naver.news_signal("금리", session=FakeSession())
+
+    @patch.dict(os.environ, KEYS)
+    def test_예산_소진이면_rerank는_기존_랭킹_유지(self):
+        from datetime import date
+        naver._calls.update(date=date.today(), count=naver.MAX_CALLS_PER_DAY)
+        issues = [issue("A"), issue("B")]
+        self.assertEqual(naver.rerank(issues, session=FakeSession()), issues)
+
+    @patch.dict(os.environ, KEYS)
+    def test_날짜가_바뀌면_예산이_리셋된다(self):
+        from datetime import date, timedelta
+        naver._calls.update(date=date.today() - timedelta(days=1),
+                            count=naver.MAX_CALLS_PER_DAY)
+        session = FakeSession(news=FakeResponse(news_body(1, ["a.com"])))
+        self.assertEqual(naver.news_signal("금리", session=session).total, 1)
+
+
 class KeywordTest(unittest.TestCase):
     def test_클러스터_최빈_핵심어를_뽑는다(self):
         # keywords()는 한글·영문 런을 따로 토큰화한다("SK하이닉스" → sk + 하이닉스).

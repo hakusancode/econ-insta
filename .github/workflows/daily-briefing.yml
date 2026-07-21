@@ -69,6 +69,9 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # 네이버 인기도 재정렬(없으면 크로스소스 랭킹으로 저하). 실행당 최대 11콜.
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
         run: python -m econ_insta.daily --edition "${{ steps.edition.outputs.edition }}" --render
 
       # out/은 .gitignore라 -f가 필요하다. 발행이 raw URL을 요구하므로 push가 먼저다.

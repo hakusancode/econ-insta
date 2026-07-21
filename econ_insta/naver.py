@@ -48,6 +48,24 @@ class NaverError(RuntimeError):
     """네이버 API 호출 실패. 호출부는 잡아서 기존 랭킹으로 저하한다."""
 
 
+MAX_CALLS_PER_DAY = 500
+"""프로세스 내 일일 호출 절대 상한 — 무료 한도(뉴스 25,000/일, 트렌드 50,000/월)를
+절대 넘지 않기 위한 안전장치. 정상 사용은 발행 1회당 최대 11콜(뉴스 10 + 트렌드 1),
+하루 최대 4실행 = 44콜이라 이 상한은 폭주 버그(무한 루프 등)만 잡는다.
+소진되면 NaverError → rerank가 기존 랭킹으로 저하하고 발행은 계속된다."""
+
+_calls = {"date": None, "count": 0}
+
+
+def _spend_budget() -> None:
+    today = datetime.now().date()
+    if _calls["date"] != today:
+        _calls["date"], _calls["count"] = today, 0
+    if _calls["count"] >= MAX_CALLS_PER_DAY:
+        raise NaverError(f"일일 호출 예산({MAX_CALLS_PER_DAY}) 소진 — 무료 한도 보호")
+    _calls["count"] += 1
+
+
 def _credentials() -> tuple[str, str] | None:
     _load_dotenv()
     client_id = os.environ.get("NAVER_CLIENT_ID")
@@ -77,6 +95,7 @@ def _headers() -> dict[str, str]:
 
 
 def news_signal(query: str, session: requests.Session | None = None) -> NewsSignal:
+    _spend_budget()
     caller = session or requests.Session()
     try:
         response = caller.get(
@@ -108,6 +127,7 @@ def trend_scores(
     keyword_list = keyword_list[:DATALAB_LIMIT]
     if not keyword_list:
         return {}
+    _spend_budget()
     end = (now or datetime.now()).date()
     start = end - timedelta(days=TREND_DAYS)
     caller = session or requests.Session()

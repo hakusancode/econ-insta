@@ -379,11 +379,16 @@ def summarize(
     brief: DailyBrief,
     client: anthropic.Anthropic | None = None,
     model: str = MODEL,
+    issues: list[Issue] | None = None,
 ) -> Briefing:
-    """생성 → 수치 감사 → (위반 시) 1회 재생성 → 남은 위반 카드는 폐기."""
+    """생성 → 수치 감사 → (위반 시) 1회 재생성 → 남은 위반 카드는 폐기.
+
+    issues를 넘기면 그 랭킹을 그대로 쓴다(호출부가 네이버 인기도 재정렬을 태울 때 —
+    daily.render_edition 참조). None이면 기존처럼 크로스소스 랭킹만 쓴다."""
     _load_dotenv()
     caller = client or anthropic.Anthropic()
-    issues = rank_issues(brief.articles)[:PROMPT_ISSUES]
+    if issues is None:
+        issues = rank_issues(brief.articles)[:PROMPT_ISSUES]
     prompt = build_prompt(brief, issues)
 
     payload, input_tokens, output_tokens = _generate(caller, model, prompt)

@@ -27,11 +27,12 @@ import requests
 from .config import _load_dotenv
 from .issues import Issue, keywords
 
-# 네이버 오픈API는 developers.naver.com에서 네이버 클라우드 플랫폼(API HUB)으로
-# 이관됐다(2026-07 실측: 구 openapi.naver.com 키는 401). 도메인이 서로 다른 것에
-# 주의 — 뉴스 검색은 naverapihub, 데이터랩은 naveropenapi 게이트웨이다.
+# 네이버 오픈API는 developers.naver.com에서 네이버 클라우드 플랫폼 API HUB로
+# 이관됐다(2026-07 실측: 구 openapi.naver.com 키는 401). 검색어 트렌드 경로는
+# 문서(구 AI·NAVER의 datalab/v1/search)와 달리 search-trend/v1/search 다 —
+# 콘솔에서 Search Trend 이용 신청 후 같은 API HUB 키로 200 실측.
 NEWS_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news"
-DATALAB_URL = "https://naveropenapi.apigw.ntruss.com/datalab/v1/search"
+DATALAB_URL = "https://naverapihub.apigw.ntruss.com/search-trend/v1/search"
 TIMEOUT = 15
 
 RERANK_LIMIT = 10   # 뉴스 검색을 붙일 이슈 수 (= summarizer.PROMPT_ISSUES)
@@ -157,9 +158,20 @@ def issue_keyword(issue: Issue) -> str:
     return max(counter.items(), key=lambda kv: (kv[1], len(kv[0])))[0]
 
 
+SOURCES_CAP = 15
+"""매체 수 상한. 정부·기업 보도자료는 수십 매체가 그대로 받아써서 매체 수가
+화제성과 무관하게 치솟는다(실측: '공적자금 회수' 30매체 vs 검색 트렌드 0).
+캡 없이 매체 수를 주 신호로 두면 보도자료가 항상 이긴다."""
+
+
 def _popularity(signal: NewsSignal, trend: float) -> float:
-    """가중 결합. 매체 수가 주 신호(0~30), 기사 수는 로그(0~7), 트렌드는 보조(0~10)."""
-    return signal.sources * 10 + math.log10(signal.total + 1) + trend / 10
+    """가중 결합. 북극성이 조회수이므로 대중 검색 트렌드(0~100)가 주 신호다.
+
+    매체 수는 캡(0~15)을 씌운 보조 신호, 기사 수는 로그(0~7) 타이브레이커.
+    실측 근거: 트렌드는 하이닉스 33 vs 나머지 0~1로 화제 이슈를 유일하게
+    구분했고, 매체 수는 보도자료 증폭에 오염됐다(2026-07-21 비교 실행).
+    """
+    return trend + min(signal.sources, SOURCES_CAP) + math.log10(signal.total + 1)
 
 
 def rerank(

@@ -21,6 +21,7 @@ import re
 import time
 from dataclasses import dataclass
 from io import BytesIO
+from urllib.parse import urlparse
 
 import anthropic
 import requests
@@ -143,20 +144,27 @@ def _get(url: str, caller, sleep) -> bytes | None:
     이미지 CDN은 연속 요청에 429 + Retry-After를 준다(위키미디어에서 실제로 맞았다).
     짧은 대기면 물러섰다 다시 치고, 긴 차단이면 기다리지 않고 포기한다.
     """
+    # 실패 사유는 삼키더라도 **로그는 남긴다** — 2026-07-26부터 CI에서 표지 사진이
+    # 전멸했는데 조용한 폐기 탓에 어느 CDN이 왜 거부하는지 로그로 알 수 없었다.
+    host = urlparse(url).netloc
     for _ in range(RETRIES):
         try:
             response = caller.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            print(f"  ! 사진 후보 실패 ({host}): {type(exc).__name__} {exc}")
             return None
         if response.status_code == 429:
             wait = _retry_after(response)
             if wait <= 0 or wait > MAX_WAIT_SECONDS:
+                print(f"  ! 사진 후보 실패 ({host}): 429 (Retry-After {wait:.0f}s)")
                 return None
             sleep(wait)
             continue
         if response.status_code != 200:
+            print(f"  ! 사진 후보 실패 ({host}): HTTP {response.status_code}")
             return None
         return response.content
+    print(f"  ! 사진 후보 실패 ({host}): 429 재시도 소진")
     return None
 
 

@@ -21,6 +21,7 @@ CLI:
 
 from __future__ import annotations
 
+import math
 import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -268,6 +269,22 @@ def scene_chart(series: Series, when: datetime, fonts: FontSet) -> Image.Image:
 
 
 # --- 모션 ------------------------------------------------------------------
+
+
+def ease_out_cubic(p: float) -> float:
+    """감속 이징. 모든 모션이 이 하나를 쓴다."""
+    p = min(max(p, 0.0), 1.0)
+    return 1 - (1 - p) ** 3
+
+
+def _count_value(target: float, p: float) -> float:
+    """도입부 카운트업: 장면 앞 60% 동안 0 → target."""
+    return target * ease_out_cubic(min(p / 0.6, 1.0))
+
+
+def _visible_count(n: int, p: float) -> int:
+    """차트 드로잉: 장면 앞 70% 동안 가시 점 2 → n."""
+    return max(2, math.ceil(n * ease_out_cubic(min(p / 0.7, 1.0))))
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import sys
 import time
 from dataclasses import dataclass
@@ -115,6 +116,24 @@ def hosting_ready(urls, *, checksums: dict[str, str] | None = None,
     return False
 
 
+def briefing_meta(briefing, edition: Edition, when: datetime) -> dict:
+    """주간 릴스의 소재가 되는 이슈 메타데이터 (스펙 §4).
+
+    국내 RSS는 D-2면 기사가 증발하므로 데일리가 매일 남겨야 주간이 읽을 수 있다.
+    issue가 None(그래픽 폴백 날)이어도 파일은 만든다 — '없었음'도 기록이다.
+    """
+    issue = briefing.issue
+    return {
+        "date": f"{when:%Y-%m-%d}",
+        "edition": edition.slug,
+        "headline": briefing.headline,
+        "issue_title": issue.articles[0].title if issue else None,
+        "sources": sorted(issue.sources) if issue else [],
+        "article_count": len(issue.articles) if issue else 0,
+        "cards": [{"title": c.title, "source": c.source} for c in briefing.cards],
+    }
+
+
 def render_edition(edition: Edition) -> Path:
     brief = collect(feeds=edition.feeds)
     print(f"수집: 기사 {len(brief.articles)}건, 지표 {len(brief.quotes)}건")
@@ -145,6 +164,10 @@ def render_edition(edition: Edition) -> Path:
     caption = build_caption(briefing.headline, briefing.cards, brief.collected_at,
                             bg.credits if bg else ())
     (out / "caption.txt").write_text(caption, encoding="utf-8")
+    (out / "briefing.json").write_text(
+        json.dumps(briefing_meta(briefing, edition, brief.collected_at), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(f"렌더 완료 → {out}")
     return out
 

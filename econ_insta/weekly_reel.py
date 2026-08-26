@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -23,9 +23,10 @@ import anthropic
 
 from . import audio, reels
 from .backgrounds import available_people, build_background
-from .collector import now_kst
+from .collector import Article, now_kst
 from .config import PROJECT_ROOT, _load_dotenv
 from .factcheck import unsupported_amounts
+from .issues import Issue
 from .renderer import FontSet
 from .stock_brief import Series
 from .summarizer import MAX_TOKENS, MODEL, replace_hanja, residual_hanja
@@ -109,6 +110,12 @@ class WeeklyCandidate:
     sources: list[str]
     article_count: int
     cards: list[dict]
+    articles: list[dict] = field(default_factory=list)
+    """daily.briefing_meta가 남긴 기사 원문(제목·출처·링크·발행일·이미지 URL).
+
+    build_weekly가 이걸로 Article/Issue를 복원해 얼굴 표지의 article-photo
+    체인(backgrounds.build_background issue=...)을 태운다. 구버전 briefing.json에는
+    이 키가 없을 수 있어 load_candidates가 없으면 빈 목록으로 채운다(하위호환)."""
 
 
 @dataclass(frozen=True)
@@ -157,6 +164,7 @@ def load_candidates(out_root: Path, today: datetime, days: int = 7) -> list[Week
                 sources=data["sources"],
                 article_count=data["article_count"],
                 cards=data["cards"],
+                articles=data.get("articles", []),
             ))
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             print(f"! briefing.json 손상 — 건너뜀: {path} ({exc})")
@@ -386,6 +394,40 @@ def build_caption(
     return "\n".join(lines)
 
 
+# --- 기사 사진 체인 ------------------------------------------------------------
+
+
+def _reconstruct_issue(articles_data: list[dict]) -> Issue | None:
+    """chosen 후보의 articles(daily.briefing_meta가 남긴 JSON)에서 Issue를 복원한다.
+
+    photos.pick이 읽는 것은 issue.articles의 .source·.images뿐이지만, Article은
+    frozen dataclass라 필수 필드(title·link·published)를 다 채워야 만들 수 있다.
+    keywords는 비워도 된다 — 이 경로는 rank_issues를 다시 돌리는 게 아니라 이미
+    선택된 이슈의 기사만 배경 사진 후보로 넘기는 것이라 클러스터링이 필요 없다.
+
+    손상된 항목(필수 키 누락·날짜 파싱 실패) 하나가 있어도 렌더를 죽이면 안 된다
+    — load_candidates의 손상 파일 처리(전체 스킵 + 경고)와 같은 관용구로,
+    전체를 issue=None으로 내려 인물/위키미디어/Unsplash 폴백 체인에 맡긴다.
+    """
+    if not articles_data:
+        return None
+    try:
+        articles = [
+            Article(
+                source=a["source"],
+                title=a["title"],
+                link=a["link"],
+                published=datetime.fromisoformat(a["published"]),
+                images=list(a.get("images", [])),
+            )
+            for a in articles_data
+        ]
+    except (KeyError, ValueError, TypeError) as exc:
+        print(f"! 기사 사진 복원 실패 — issue=None으로 진행합니다: {exc}")
+        return None
+    return Issue(articles=articles)
+
+
 # --- 렌더 --------------------------------------------------------------------
 
 
@@ -407,9 +449,11 @@ def build_weekly(when: datetime | None = None, client: anthropic.Anthropic | Non
 
     series = weekly_series(script.ticker_label)
 
+    issue = _reconstruct_issue(script.chosen.articles)
+
     errors: list[str] = []
     bg = build_background(
-        script.people, script.bg_query, errors=errors, issue=None, headline=script.hook
+        script.people, script.bg_query, errors=errors, issue=issue, headline=script.hook
     )
     for message in errors:
         print(f"  ! 배경: {message}")

@@ -19,21 +19,25 @@ from econ_insta.stock_brief import Reason
 TODAY = datetime(2026, 8, 30, 19, 0, tzinfo=KST)
 
 
-def _write_briefing(root, date, edition, sources, count, title="이슈"):
+def _write_briefing(root, date, edition, sources, count, title="이슈", articles=None):
     d = root / f"{date}-{edition}"
     d.mkdir(parents=True)
-    (d / "briefing.json").write_text(json.dumps({
+    payload = {
         "date": date, "edition": edition, "headline": f"{title} 훅",
         "issue_title": title, "sources": sources, "article_count": count,
         "cards": [{"title": f"{title} 카드", "source": sources[0] if sources else "매일경제"}],
-    }, ensure_ascii=False), encoding="utf-8")
+    }
+    if articles is not None:
+        payload["articles"] = articles
+    (d / "briefing.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def _candidate(title="이슈", sources=("매일경제",), count=3):
+def _candidate(title="이슈", sources=("매일경제",), count=3, articles=None):
     return weekly_reel.WeeklyCandidate(
         date="2026-08-26", edition="kr", headline=f"{title} 훅", issue_title=title,
         sources=list(sources), article_count=count,
-        cards=[{"title": f"{title} 카드", "source": sources[0]}])
+        cards=[{"title": f"{title} 카드", "source": sources[0]}],
+        articles=articles if articles is not None else [])
 
 
 class LoadCandidatesTest(unittest.TestCase):
@@ -83,6 +87,27 @@ class LoadCandidatesTest(unittest.TestCase):
             (broken_dir / "briefing.json").write_text("{이건 json이 아닙니다", encoding="utf-8")
             got = weekly_reel.load_candidates(root, TODAY)
             self.assertEqual([c.issue_title for c in got], ["정상 이슈"])
+
+    def test_articles_키가_없는_구버전_파일도_빈_목록으로_로드된다(self):
+        """하위호환 — articles 키를 추가하기 전 briefing.json도 계속 읽혀야 한다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_briefing(root, "2026-08-26", "kr", ["매일경제"], 3, "구버전 이슈")  # articles=None → 키 없음
+            got = weekly_reel.load_candidates(root, TODAY)
+            self.assertEqual(len(got), 1)
+            self.assertEqual(got[0].articles, [])
+
+    def test_articles_키가_있으면_그대로_실린다(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            article_payload = [{
+                "title": "기사 제목", "source": "매일경제", "link": "https://mk.co.kr/1",
+                "published": "2026-08-25T09:00:00+09:00", "images": ["https://img/1.jpg"],
+            }]
+            _write_briefing(root, "2026-08-26", "kr", ["매일경제"], 3, "신버전 이슈",
+                            articles=article_payload)
+            got = weekly_reel.load_candidates(root, TODAY)
+            self.assertEqual(got[0].articles, article_payload)
 
 
 class IssueIndexGuardTest(unittest.TestCase):
@@ -310,6 +335,86 @@ class BuildWeeklySkipTest(unittest.TestCase):
                     self.assertTrue(skipped_path.exists())
                     content = skipped_path.read_text(encoding="utf-8")
                     self.assertIn("후보 없음", content)
+
+
+def _fake_render(*_a, **_k):
+    return lambda p: SimpleNamespace(save=lambda *a, **k: None)
+
+
+class BuildWeeklyArticlePhotoChainTest(unittest.TestCase):
+    """weekly build_weekly가 chosen.articles를 Article/Issue로 복원해
+    build_background(issue=...)에 실제로 넘기는지 — 얼굴 표지의 핵심 배선."""
+
+    def _run(self, chosen_articles):
+        candidate = _candidate("이슈", ("매일경제",), 5, articles=chosen_articles)
+        script = weekly_reel.WeeklyScript(
+            hook="이번 주의 훅",
+            reasons=[Reason(title="이유", body="본문 설명입니다.", source="매일경제")],
+            ticker_label="코스피", bg_query="stock exchange", people=[],
+            chosen=candidate,
+        )
+        captured: dict = {}
+
+        def fake_build_background(people, bg_query, *args, **kwargs):
+            captured["people"] = people
+            captured["bg_query"] = bg_query
+            captured["issue"] = kwargs.get("issue")
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(weekly_reel, "PROJECT_ROOT", root),
+                patch.object(weekly_reel, "load_candidates", return_value=[candidate]),
+                patch.object(weekly_reel, "write_script", return_value=script),
+                patch.object(weekly_reel, "weekly_series", return_value=object()),
+                patch.object(weekly_reel, "build_background", side_effect=fake_build_background),
+                patch.object(weekly_reel.FontSet, "discover", return_value=object()),
+                patch.object(weekly_reel.reels, "anim_cover", side_effect=_fake_render),
+                patch.object(weekly_reel.reels, "anim_reason", side_effect=_fake_render),
+                patch.object(weekly_reel.reels, "anim_chart", side_effect=_fake_render),
+                patch.object(weekly_reel.reels, "encode", return_value=None),
+                patch.object(weekly_reel.audio, "pick_track", return_value=None),
+            ):
+                weekly_reel.build_weekly(when=TODAY)
+        return captured
+
+    def test_기사가_있으면_복원된_issue를_build_background에_넘긴다(self):
+        articles = [
+            {
+                "title": "기사 제목 1", "source": "매일경제", "link": "https://mk.co.kr/1",
+                "published": "2026-08-25T09:00:00+09:00", "images": ["https://img/1.jpg"],
+            },
+            {
+                "title": "기사 제목 2", "source": "연합뉴스", "link": "https://yna.co.kr/2",
+                "published": "2026-08-25T10:00:00+09:00", "images": [],
+            },
+        ]
+        captured = self._run(articles)
+        issue = captured["issue"]
+        self.assertIsNotNone(issue)
+        self.assertEqual([a.title for a in issue.articles], ["기사 제목 1", "기사 제목 2"])
+        self.assertEqual(issue.articles[0].images, ["https://img/1.jpg"])
+        self.assertEqual(issue.articles[0].source, "매일경제")
+
+    def test_기사가_없으면_issue는_None이다(self):
+        captured = self._run([])
+        self.assertIsNone(captured["issue"])
+
+    def test_기사_항목이_손상돼도_렌더는_죽지_않고_issue는_None이다(self):
+        """필수 키가 빠진 기사 항목 하나가 있으면 전체를 issue=None으로 내린다
+        (load_candidates의 손상 파일 처리와 같은 관용구 — 전체 폴백, 부분 크래시 금지)."""
+        broken = [{"title": "제목만 있음"}]  # source·link·published·images 없음
+        captured = self._run(broken)
+        self.assertIsNone(captured["issue"])
+
+    def test_발행일시_형식이_잘못돼도_issue는_None이다(self):
+        broken = [{
+            "title": "제목", "source": "매일경제", "link": "https://mk.co.kr/1",
+            "published": "이건-날짜가-아닙니다", "images": [],
+        }]
+        captured = self._run(broken)
+        self.assertIsNone(captured["issue"])
 
 
 class WeeklySeriesTest(unittest.TestCase):

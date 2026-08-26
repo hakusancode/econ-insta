@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -18,6 +18,7 @@ from unittest.mock import patch
 from econ_insta import daily
 
 WHEN = datetime(2026, 8, 26, 19, 0)
+KST = timezone(timedelta(hours=9))
 
 
 def _briefing(issue=None):
@@ -26,8 +27,18 @@ def _briefing(issue=None):
 
 
 def _issue():
-    articles = [SimpleNamespace(title="한은 기준금리 동결", source="매일경제"),
-                SimpleNamespace(title="금통위 동결 배경", source="연합뉴스")]
+    articles = [
+        SimpleNamespace(
+            title="한은 기준금리 동결", source="매일경제",
+            link="https://mk.co.kr/1", published=datetime(2026, 8, 25, 9, 0, tzinfo=KST),
+            images=["https://img.mk.co.kr/1.jpg"],
+        ),
+        SimpleNamespace(
+            title="금통위 동결 배경", source="연합뉴스",
+            link="https://yna.co.kr/2", published=datetime(2026, 8, 25, 10, 0, tzinfo=KST),
+            images=[],
+        ),
+    ]
     return SimpleNamespace(articles=articles, sources={"매일경제", "연합뉴스"})
 
 
@@ -42,11 +53,30 @@ class BriefingMetaTest(unittest.TestCase):
         self.assertEqual(meta["article_count"], 2)
         self.assertEqual(meta["cards"], [{"title": "금리 동결", "source": "매일경제·연합뉴스"}])
 
+    def test_이슈의_기사가_이미지와_함께_실린다(self):
+        """주간 릴스가 article-photo 체인을 돌리려면 briefing.json에 기사 원문 정보가
+        필요하다(제목·출처·링크·발행일·이미지 URL). 이 키가 빠지면 weekly_reel이
+        Article을 복원할 수 없어 issue=None으로 떨어져 기사 사진 체인이 죽는다."""
+        meta = daily.briefing_meta(_briefing(_issue()), daily.EDITIONS["kr"], WHEN)
+        self.assertEqual(meta["articles"], [
+            {
+                "title": "한은 기준금리 동결", "source": "매일경제",
+                "link": "https://mk.co.kr/1", "published": "2026-08-25T09:00:00+09:00",
+                "images": ["https://img.mk.co.kr/1.jpg"],
+            },
+            {
+                "title": "금통위 동결 배경", "source": "연합뉴스",
+                "link": "https://yna.co.kr/2", "published": "2026-08-25T10:00:00+09:00",
+                "images": [],
+            },
+        ])
+
     def test_이슈가_None이어도_메타는_만들어진다(self):
         meta = daily.briefing_meta(_briefing(None), daily.EDITIONS["kr"], WHEN)
         self.assertIsNone(meta["issue_title"])
         self.assertEqual(meta["sources"], [])
         self.assertEqual(meta["article_count"], 0)
+        self.assertEqual(meta["articles"], [])
 
     def test_json_직렬화_왕복(self):
         meta = daily.briefing_meta(_briefing(_issue()), daily.EDITIONS["kr"], WHEN)

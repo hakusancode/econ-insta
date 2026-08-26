@@ -130,6 +130,16 @@ def briefing_meta(briefing, edition: Edition, when: datetime) -> dict:
         "issue_title": issue.articles[0].title if issue else None,
         "sources": sorted(issue.sources) if issue else [],
         "article_count": len(issue.articles) if issue else 0,
+        "articles": [
+            {
+                "title": a.title,
+                "source": a.source,
+                "link": a.link,
+                "published": a.published.isoformat(),
+                "images": list(a.images),
+            }
+            for a in issue.articles
+        ] if issue else [],
         "cards": [{"title": c.title, "source": c.source} for c in briefing.cards],
     }
 

@@ -8,9 +8,11 @@
 - **무음이어도 오디오 트랙은 넣는다.** 트랙이 아예 없으면 처리에서 실패하는 사례가 있다.
   anullsrc로 무음 AAC를 깔아둔다.
 - 릴스 탭에 노출되려면 9:16, 5~90초.
-- **음원은 붙이지 않는다.** 인스타 앱 안의 음원 라이브러리는 API로 쓸 수 없고(앱 내 사용
-  한정 라이선스), 우리가 임의의 음악을 넣으면 이미지에서 피해온 저작권 문제가 소리로
-  옮겨올 뿐이다. 무음으로 내고 필요하면 앱에서 수동으로 음원을 얹는다.
+- **음원은 라이선스가 확인된 것만 붙인다.** 인스타 앱 안의 음원 라이브러리는 API로 쓸 수
+  없고(앱 내 사용 한정 라이선스), 임의의 음악을 넣으면 이미지에서 피해온 저작권 문제가
+  소리로 옮겨올 뿐이다. 대신 `audio.py`가 관리하는 로열티프리 번들(assets/audio/tracks.json,
+  cc0/cc-by만 허용)에서 고른 트랙을 `encode(..., audio_path=...)`로 얹는다. `audio_path`가
+  없으면 기존대로 무음(anullsrc)으로 낸다.
 
 호스팅은 raw.githubusercontent가 아니라 **GitHub Pages**를 쓴다. raw는 mp4를
 `application/octet-stream`으로 주므로 인스타가 받지 않는다(실측). Pages는 `video/mp4`를 준다.
@@ -441,7 +443,27 @@ def frames(scenes: list[Scene]) -> Iterator[Image.Image]:
 # --- 인코딩 ----------------------------------------------------------------
 
 
-def encode(scenes: list[Scene], path: Path) -> Path:
+def _ffmpeg_command(path: Path, audio_path: Path | None) -> list[str]:
+    command = [
+        imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "rgb24",
+        "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS), "-i", "-",
+    ]
+    if audio_path is None:
+        # 무음 트랙. 오디오 스트림이 아예 없으면 처리에서 실패할 수 있다.
+        command += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+    else:
+        command += ["-stream_loop", "-1", "-i", str(audio_path)]
+    command += [
+        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-g", str(FPS * 2), "-r", str(FPS), "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k", "-shortest",
+        "-movflags", "+faststart", str(path),  # moov 아톰을 앞으로 — 인스타가 요구한다
+    ]
+    return command
+
+
+def encode(scenes: list[Scene], path: Path, audio_path: Path | None = None) -> Path:
     """프레임을 ffmpeg에 직접 파이프해 인스타 규격 mp4로 만든다."""
     seconds = sum(scene.seconds for scene in scenes)
     if not REEL_MIN_SECONDS <= seconds <= REEL_MAX_SECONDS:
@@ -451,23 +473,7 @@ def encode(scenes: list[Scene], path: Path) -> Path:
         )
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        imageio_ffmpeg.get_ffmpeg_exe(),
-        "-y",
-        "-loglevel", "error",
-        # 영상: 파이프로 들어오는 생 RGB 프레임
-        "-f", "rawvideo", "-pix_fmt", "rgb24",
-        "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS),
-        "-i", "-",
-        # 소리: 무음 트랙. 오디오 스트림이 아예 없으면 처리에서 실패할 수 있다.
-        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
-        "-g", str(FPS * 2), "-r", str(FPS), "-crf", "20",
-        "-c:a", "aac", "-b:a", "128k",
-        "-shortest",
-        "-movflags", "+faststart",  # moov 아톰을 앞으로 — 인스타가 요구한다
-        str(path),
-    ]
+    command = _ffmpeg_command(path, audio_path)
 
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -490,6 +496,7 @@ def build_stock_reel(
     out_dir: Path,
     fonts: FontSet | None = None,
     background: Image.Image | None = None,
+    audio_path: Path | None = None,
 ) -> tuple[Path, Path]:
     """종목 브리핑 → 릴스 mp4 + 표지 이미지(cover_url용). 둘 다 경로를 돌려준다."""
     fonts = fonts or FontSet.discover()
@@ -508,7 +515,7 @@ def build_stock_reel(
     out_dir.mkdir(parents=True, exist_ok=True)
     cover_path = out_dir / "reel-cover.jpg"
     cover_render(1.0).save(cover_path, "JPEG", quality=92)
-    video_path = encode(scenes, out_dir / "reel.mp4")
+    video_path = encode(scenes, out_dir / "reel.mp4", audio_path=audio_path)
     return video_path, cover_path
 
 

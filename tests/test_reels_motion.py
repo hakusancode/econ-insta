@@ -100,3 +100,16 @@ class AnimSceneTest(unittest.TestCase):
         anim = reels.anim_reason(reason, 1, 2, _fonts())(1.0)
         still = reels.scene_reason(reason, 1, 2, _fonts())
         self.assertEqual(anim.tobytes(), still.tobytes())
+
+
+class FfmpegCommandTest(unittest.TestCase):
+    def test_음원이_없으면_무음_트랙(self):
+        cmd = reels._ffmpeg_command(Path("x.mp4"), None)
+        self.assertIn("anullsrc=channel_layout=stereo:sample_rate=48000", cmd)
+
+    def test_음원이_있으면_루프_입력과_shortest(self):
+        cmd = reels._ffmpeg_command(Path("x.mp4"), Path("bgm.mp3"))
+        self.assertIn("bgm.mp3", " ".join(cmd))
+        self.assertIn("-stream_loop", cmd)
+        self.assertIn("-shortest", cmd)
+        self.assertNotIn("anullsrc=channel_layout=stereo:sample_rate=48000", cmd)

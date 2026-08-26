@@ -41,6 +41,8 @@ TICKERS = {
 HOOK_MAX = 24            # summarizer HEADLINE_MAX와 동일
 REASON_TITLE_MAX = 26
 REASON_BODY_MAX = 90
+REASONS_MIN = 2
+REASONS_MAX = 3
 MAX_CANDIDATES = 7
 
 _PEOPLE_HINT = (
@@ -69,17 +71,18 @@ SYSTEM = f"""당신은 한국어 경제 인스타그램 주간 릴스의 작가�
   (최대 2명). 스쳐 지나가는 언급이면 넣지 마십시오. 없으면 빈 배열.
   초상 라이브러리: {_PEOPLE_HINT}
 
-수치·한자 규칙 (기계적으로 검증되며, 위반 시 재생성됩니다):
+수치·한자·개수 규칙 (기계적으로 검증되며, 위반 시 재생성됩니다):
 - hook에는 한자를 쓰지 마십시오. 국가 약칭도 한글로 풀어 쓰십시오(美→미국, 中→중국).
 - hook과 reasons의 모든 수치는 제공된 자료(후보 목록)에 있는 값이어야 합니다.
-  단위 환산은 괜찮지만 값을 바꾸거나 없는 값을 만들지 마십시오."""
+  단위 환산은 괜찮지만 값을 바꾸거나 없는 값을 만들지 마십시오.
+- reasons는 반드시 2개 또는 3개여야 합니다. 1개나 4개 이상은 허용되지 않습니다."""
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "issue_index": {"type": "integer"},
         "hook": {"type": "string"},
-        "reasons": {"type": "array", "minItems": 2, "maxItems": 3, "items": {
+        "reasons": {"type": "array", "items": {
             "type": "object",
             "properties": {"title": {"type": "string"}, "body": {"type": "string"},
                            "source": {"type": "string"}},
@@ -228,6 +231,13 @@ def audit(texts: dict, source: str, candidates: list[WeeklyCandidate]) -> dict[s
     """
     problems: dict[str, list[str]] = {}
     known_sources = {s for c in candidates for s in c.sources}
+
+    reason_count = len(texts["reasons"])
+    if not REASONS_MIN <= reason_count <= REASONS_MAX:
+        problems["reasons"] = [
+            f"reasons {reason_count}개 — {REASONS_MIN}~{REASONS_MAX}개로 맞추십시오"
+            " (SCHEMA의 minItems/maxItems는 API가 지원하지 않아 여기서 검사합니다)"
+        ]
 
     hook = texts["hook"]
     bad = unsupported_amounts(hook, source)

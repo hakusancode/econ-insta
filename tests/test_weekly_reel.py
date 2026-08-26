@@ -262,6 +262,40 @@ class WriteScriptRetryTest(unittest.TestCase):
         self.assertEqual(client.calls, 2)
         self.assertEqual(result.reasons[0].source, "매일경제")
 
+    def test_이유가_1개면_재시도로_돌린다(self):
+        """SCHEMA의 minItems/maxItems를 API가 거부해 제거했으므로, 2~3개 제약은
+        audit이 기계로 막아야 한다(Bug: 400 minItems not supported — plan defect)."""
+        bad = script_payload(reasons=[
+            {"title": "이유 하나", "body": "본문 설명입니다.", "source": "매일경제"},
+        ])
+        good = script_payload()
+        client = FakeClient([bad, good])
+        result = weekly_reel.write_script(two_candidates(), client=client)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(len(result.reasons), 2)
+
+    def test_이유가_4개면_재시도로_돌린다(self):
+        bad = script_payload(reasons=[
+            {"title": "이유 하나", "body": "본문 설명입니다.", "source": "매일경제"},
+            {"title": "이유 둘", "body": "다른 본문 설명입니다.", "source": "연합뉴스"},
+            {"title": "이유 셋", "body": "또 다른 본문 설명입니다.", "source": "매일경제"},
+            {"title": "이유 넷", "body": "네번째 본문 설명입니다.", "source": "연합뉴스"},
+        ])
+        good = script_payload()
+        client = FakeClient([bad, good])
+        result = weekly_reel.write_script(two_candidates(), client=client)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(len(result.reasons), 2)
+
+    def test_이유_개수_위반이_계속_남으면_실패(self):
+        bad = script_payload(reasons=[
+            {"title": "이유 하나", "body": "본문 설명입니다.", "source": "매일경제"},
+        ])
+        client = FakeClient([bad, bad])
+        with self.assertRaises(weekly_reel.WeeklyError):
+            weekly_reel.write_script(two_candidates(), client=client)
+        self.assertEqual(client.calls, 2)
+
 
 class BuildWeeklySkipTest(unittest.TestCase):
     def test_zero_candidates_returns_none_and_writes_skipped_txt(self):

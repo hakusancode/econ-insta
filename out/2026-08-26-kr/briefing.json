@@ -1,0 +1,67 @@
+{
+  "date": "2026-08-26",
+  "edition": "kr",
+  "headline": "내일 금통위, 금리 갈림길에 선 한국은행",
+  "issue_title": "원/달러 환율, 한은 금통위 앞두고 1,380원대 중반 횡보",
+  "sources": [
+    "매일경제",
+    "연합뉴스"
+  ],
+  "article_count": 4,
+  "articles": [
+    {
+      "title": "원/달러 환율, 한은 금통위 앞두고 1,380원대 중반 횡보",
+      "source": "연합뉴스",
+      "link": "https://www.yna.co.kr/view/AKR20260826138800002",
+      "published": "2026-08-26T16:18:28+09:00",
+      "images": [
+        "https://img.yna.co.kr/photo/yna/YH/2026/08/26/PYH2026082617570001300_P2.jpg"
+      ]
+    },
+    {
+      "title": "[외환] 원/달러 환율 1.3원 내린 1,384.8원(15:30 기준가)",
+      "source": "연합뉴스",
+      "link": "https://www.yna.co.kr/view/AKR20260826130100002",
+      "published": "2026-08-26T15:35:22+09:00",
+      "images": [
+        "https://img.yna.co.kr/etc/inner/KR/2026/08/26/AKR20260826130100002_01_i_P2.jpg"
+      ]
+    },
+    {
+      "title": "노무라 \"한은 8월 금통위서 금리 인상 확률 최고 수준\"",
+      "source": "연합뉴스",
+      "link": "https://www.yna.co.kr/view/AKR20260826071000008",
+      "published": "2026-08-26T11:06:45+09:00",
+      "images": [
+        "https://img.yna.co.kr/etc/inner/KR/2026/08/26/AKR20260826071000008_01_i_P2.jpg"
+      ]
+    },
+    {
+      "title": "“대출이자 또 오르나”…내일 기준금리 ‘연속 인상’ 전문가 전망 엇갈려",
+      "source": "매일경제",
+      "link": "https://www.mk.co.kr/news/economy/12136443",
+      "published": "2026-08-26T09:42:31+09:00",
+      "images": [
+        "https://pimg.mk.co.kr/news/cms/202608/26/news-p.v1.20260804.2c07674d4d7141bdb4b8af63f2f0205d_R.jpg"
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "title": "내일 금통위, 전망은 팽팽",
+      "source": "매일경제"
+    },
+    {
+      "title": "노무라 \"인상 확률 최고 수준\"",
+      "source": "연합뉴스"
+    },
+    {
+      "title": "환율 횡보, 채권금리는 눈치보기",
+      "source": "연합뉴스"
+    },
+    {
+      "title": "내일 결과에 대출자 시선 집중",
+      "source": "매일경제"
+    }
+  ]
+}

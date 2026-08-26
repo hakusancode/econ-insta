@@ -4,14 +4,16 @@
 Claude에게 가장 화제성 있는 이슈를 고르게 하고(issue_index), 훅 한 줄과 이유 2~3개를
 받는다. 수치·한자는 summarizer/factcheck과 같은 방식으로 기계 검증한다.
 
-렌더링·발행은 이 모듈의 책임이 아니다(별도 모듈).
+차트·렌더·캡션·발행은 이 모듈이 이어받는다(build_weekly) — reels.py의 anim_* 모션과
+audio.py의 로열티프리 트랙, backgrounds.py의 배경을 조립해 릴스 mp4·표지·캡션을 낸다.
 
 CLI:
-    python -m econ_insta.weekly_reel
+    python -m econ_insta.weekly_reel --render|--publish
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,10 +21,13 @@ from pathlib import Path
 
 import anthropic
 
-from .backgrounds import available_people
-from .config import _load_dotenv
+from . import audio, reels
+from .backgrounds import available_people, build_background
+from .collector import now_kst
+from .config import PROJECT_ROOT, _load_dotenv
 from .factcheck import unsupported_amounts
-from .renderer import OUTPUT_ROOT
+from .renderer import FontSet
+from .stock_brief import Series
 from .summarizer import MAX_TOKENS, MODEL, replace_hanja, residual_hanja
 
 EFFORT = "medium"
@@ -294,26 +299,134 @@ def write_script(candidates: list[WeeklyCandidate], client: anthropic.Anthropic 
     )
 
 
-def main() -> int:
-    candidates = load_candidates(OUTPUT_ROOT, datetime.now())
+# --- 통화 표시 --------------------------------------------------------------
+
+_WON_TICKERS = {"^KS11", "^KQ11", "KRW=X"}
+
+
+def _currency_for(ticker: str) -> str:
+    """원화로 표시할 티커인가 — stock_brief 관용구(지수·환율·.KS 상장 종목만 "원").
+
+    나머지(나스닥·S&P500·WTI·금·비트코인 등)는 "pt"로 둔다 — 값을 원화로 환산하지
+    않으므로 원 단위라고 쓰면 거짓말이다.
+    """
+    return "원" if ticker.endswith(".KS") or ticker in _WON_TICKERS else "pt"
+
+
+def weekly_series(label: str) -> Series:
+    """TICKERS[label]의 최근 3개월 종가. 일요일 실행 전제라 intraday=False다."""
+    import yfinance as yf
+
+    ticker = TICKERS[label]
+    history = yf.Ticker(ticker).history(period="3mo", auto_adjust=False)
+    closes = [float(v) for v in history["Close"] if v == v]
+    dates = [d.to_pydatetime() for d, v in history["Close"].items() if v == v]
+    return Series(
+        name=label, ticker=ticker, closes=closes, dates=dates,
+        currency=_currency_for(ticker), intraday=False,
+    )
+
+
+# --- 캡션 --------------------------------------------------------------------
+
+DISCLAIMER = "※ 정보 제공 목적이며 투자 권유가 아닙니다."
+HASHTAGS = "#경제 #주식 #증시 #주간브리핑 #투자 #경제뉴스"
+
+
+def build_caption(
+    script: WeeklyScript, when: datetime, credits: tuple[str, ...] = (),
+    track: audio.Track | None = None,
+) -> str:
+    """캡션 조립. 크레딧 줄(📷/🎵)은 라이선스 의무라 조건 충족 시 반드시 싣는다."""
+    sources = sorted({s.strip() for r in script.reasons for s in r.source.split("·") if s.strip()})
+    lines = [script.hook, "", f"{when:%Y년 %m월 %d일} 주간 이슈 브리핑", ""]
+    lines += [f"· {r.title}" for r in script.reasons]
+    lines += ["", "출처 · " + " · ".join(sources)]
+    lines += [f"📷 {credit}" for credit in credits]
+    if track is not None and audio.needs_credit(track):
+        lines.append(f"🎵 {track.credit}")
+    lines += ["", DISCLAIMER, "", HASHTAGS]
+    return "\n".join(lines)
+
+
+# --- 렌더 --------------------------------------------------------------------
+
+
+def build_weekly(when: datetime | None = None, client: anthropic.Anthropic | None = None) -> Path | None:
+    """이번 주 릴스를 렌더한다. 후보가 0건이면 skipped.txt를 남기고 None(스킵)."""
+    when = when or now_kst()
+    out_dir = PROJECT_ROOT / "out" / f"{when:%Y-%m-%d}-weekly-reel"
+
+    candidates = load_candidates(PROJECT_ROOT / "out", when)
     print(f"후보 {len(candidates)}건")
-    for i, c in enumerate(candidates, 1):
-        print(f"  [{i}] {c.issue_title}  (매체 {len(c.sources)}곳, 기사 {c.article_count}건)")
+    if not candidates:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "skipped.txt").write_text(f"{when:%Y-%m-%d}: 후보 없음\n", encoding="utf-8")
+        print(f"소재 없음 — 스킵: {out_dir}")
+        return None
 
-    try:
-        script = write_script(candidates)
-    except WeeklyError as exc:
-        print(f"대본 생성 실패: {exc}")
-        return 1
+    script = write_script(candidates, client=client)
+    print(f"훅: {script.hook}  (티커: {script.ticker_label})")
 
-    print(f"\n■ 훅: {script.hook}")
-    print(f"  이슈: {script.chosen.issue_title} ({script.chosen.date})")
-    print(f"  티커: {script.ticker_label}")
-    print(f"  배경: {script.bg_query} (인물: {list(script.people) or '없음'})")
-    for i, reason in enumerate(script.reasons, 1):
-        print(f"  {i}. {reason.title} [{reason.source}]")
-        print(f"     {reason.body}")
-    return 0
+    series = weekly_series(script.ticker_label)
+
+    errors: list[str] = []
+    bg = build_background(
+        script.people, script.bg_query, errors=errors, issue=None, headline=script.hook
+    )
+    for message in errors:
+        print(f"  ! 배경: {message}")
+    print(f"배경: {'사진' if bg else '그래픽 폴백'}")
+
+    fonts = FontSet.discover()
+    cover_render = reels.anim_cover(
+        script.hook, series.change_pct(5), when, fonts, kicker="주간 이슈 브리핑",
+        background=bg.image if bg else None,
+    )
+    scenes = [reels.Scene(None, reels.COVER_SECONDS, render=cover_render)]
+    scenes += [
+        reels.Scene(
+            None, reels.REASON_SECONDS,
+            render=reels.anim_reason(reason, i + 1, len(script.reasons), fonts),
+        )
+        for i, reason in enumerate(script.reasons)
+    ]
+    scenes.append(reels.Scene(None, reels.CHART_SECONDS, render=reels.anim_chart(series, when, fonts)))
+
+    track = audio.pick_track(when)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cover_path = out_dir / "reel-cover.jpg"
+    cover_render(1.0).save(cover_path, "JPEG", quality=92)
+    reels.encode(scenes, out_dir / "reel.mp4", audio_path=track.path if track else None)
+
+    caption = build_caption(script, when, credits=bg.credits if bg else (), track=track)
+    (out_dir / "caption.txt").write_text(caption, encoding="utf-8")
+
+    print(f"렌더 완료 → {out_dir}")
+    return out_dir
+
+
+# --- CLI ----------------------------------------------------------------
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="주간 릴스 렌더·발행")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--render", action="store_true")
+    group.add_argument("--publish", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.render:
+        build_weekly()
+        return 0
+
+    when = now_kst()
+    out_dir = PROJECT_ROOT / "out" / f"{when:%Y-%m-%d}-weekly-reel"
+    if (out_dir / "skipped.txt").exists():
+        print(f"이번 주 소재 없음 — 발행 건너뜀: {out_dir}")
+        return 0
+    return reels.publish_reel(out_dir)
 
 
 if __name__ == "__main__":

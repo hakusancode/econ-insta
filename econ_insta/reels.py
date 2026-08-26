@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -522,7 +523,25 @@ def build_stock_reel(
 # --- 발행 ------------------------------------------------------------------
 
 
-def publish_reel(out_dir: Path) -> int:
+def _video_hosting_ready(url: str, *, attempts: int = 10, delay: float = 30.0,
+                         sleep=time.sleep, get=requests.get) -> bool:
+    """Pages가 mp4를 video/*로 주는지 재시도하며 확인한다.
+
+    daily.hosting_ready(daily.py:89)의 단일 URL 축소판 — Pages 빌드는 1~2분 걸려
+    기존 단발 확인은 크론에서 거의 매번 죽었다.
+    """
+    for attempt in range(1, attempts + 1):
+        response = get(url, timeout=30, allow_redirects=False)
+        kind = response.headers.get("Content-Type", "")
+        if response.status_code == 200 and kind.startswith("video/"):
+            return True
+        print(f"호스팅 미전파 (시도 {attempt}/{attempts}, HTTP {response.status_code}, {kind}): {url}")
+        if attempt < attempts:
+            sleep(delay)
+    return False
+
+
+def publish_reel(out_dir: Path, *, attempts: int = 10, delay: float = 30.0, sleep=time.sleep) -> int:
     """Pages에 올라간 mp4를 릴스로 발행한다."""
     from .ig_client import InstagramClient
 
@@ -540,14 +559,11 @@ def publish_reel(out_dir: Path) -> int:
     cover_url = f"{PAGES_BASE}/{rel}/{cover.name}" if cover.exists() else None
 
     # raw.githubusercontent는 mp4를 application/octet-stream으로 준다 → 인스타가 안 받는다.
-    # Pages가 video/mp4를 주는지 발행 전에 확인한다.
-    response = requests.get(video_url, timeout=30, allow_redirects=False)
-    kind = response.headers.get("Content-Type", "")
-    if response.status_code != 200 or not kind.startswith("video/"):
-        print(f"호스팅 확인 실패 ({response.status_code}, {kind}): {video_url}")
+    # Pages가 video/mp4를 주는지 발행 전에 확인한다(빌드 1~2분 — 재시도).
+    if not _video_hosting_ready(video_url, attempts=attempts, delay=delay, sleep=sleep):
         print("Pages 빌드가 끝났는지 확인하세요 (push 후 1~2분).")
         return 1
-    print(f"호스팅 OK: {kind}, {len(response.content):,} bytes")
+    print(f"호스팅 OK: {video_url}")
 
     caption = caption_path.read_text(encoding="utf-8")
     result = InstagramClient().publish_reel(video_url, caption, cover_url=cover_url)

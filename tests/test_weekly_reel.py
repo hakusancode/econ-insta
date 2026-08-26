@@ -9,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from econ_insta import weekly_reel
+from econ_insta import audio, reels, weekly_reel
+from econ_insta.stock_brief import Reason
 
 TODAY = datetime(2026, 8, 30, 19, 0)
 
@@ -195,6 +196,58 @@ class WriteScriptRetryTest(unittest.TestCase):
         with self.assertRaises(weekly_reel.WeeklyError):
             weekly_reel.write_script(two_candidates(), client=client)
         self.assertEqual(client.calls, 2)
+
+
+def _script():
+    return weekly_reel.WeeklyScript(
+        hook="코스피, 한 주가 무너졌다",
+        reasons=[Reason(title="외국인 이탈", body="외국인 순매도가 이어졌다.", source="매일경제·연합뉴스"),
+                 Reason(title="AI 회의론", body="반도체 투자심리가 꺾였다.", source="매일경제")],
+        ticker_label="코스피", bg_query="stock exchange", people=[],
+        chosen=_candidate("코스피 급락", ("매일경제", "연합뉴스"), 8))
+
+
+class FakeResponse:
+    def __init__(self, status_code, content_type):
+        self.status_code = status_code
+        self.headers = {"Content-Type": content_type}
+        self.content = b""
+
+
+class WeeklyCaptionTest(unittest.TestCase):
+    def test_cc_by_음원은_크레딧_줄이_실린다(self):
+        track = audio.Track(Path("bgm.mp3"), "곡", "작곡가", "cc-by-4.0", "곡 · 작곡가 · CC BY 4.0")
+        caption = weekly_reel.build_caption(_script(), TODAY, credits=(), track=track)
+        self.assertIn("🎵 곡 · 작곡가 · CC BY 4.0", caption)
+
+    def test_cc0_음원은_크레딧_줄이_없다(self):
+        track = audio.Track(Path("bgm.mp3"), "곡", "작곡가", "cc0", "")
+        caption = weekly_reel.build_caption(_script(), TODAY, credits=(), track=track)
+        self.assertNotIn("🎵", caption)
+
+    def test_복합_출처는_쪼개서_dedup(self):
+        caption = weekly_reel.build_caption(_script(), TODAY, credits=(), track=None)
+        self.assertIn("출처 · 매일경제 · 연합뉴스", caption)
+
+    def test_투자유의_문구가_있다(self):
+        caption = weekly_reel.build_caption(_script(), TODAY, credits=(), track=None)
+        self.assertIn("투자 권유가 아닙니다", caption)
+
+
+class PublishRetryTest(unittest.TestCase):
+    def test_호스팅_미전파면_재시도한다(self):
+        responses = [FakeResponse(404, ""), FakeResponse(200, "video/mp4")]
+        sleeps = []
+        ok = reels._video_hosting_ready("https://x/reel.mp4", attempts=3, delay=1.0,
+                                        sleep=sleeps.append, get=lambda *a, **k: responses.pop(0))
+        self.assertTrue(ok)
+        self.assertEqual(sleeps, [1.0])
+
+    def test_끝내_실패하면_False(self):
+        ok = reels._video_hosting_ready("https://x/reel.mp4", attempts=2, delay=0.0,
+                                        sleep=lambda s: None,
+                                        get=lambda *a, **k: FakeResponse(404, ""))
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":

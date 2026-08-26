@@ -129,24 +129,35 @@ def load_candidates(out_root: Path, today: datetime, days: int = 7) -> list[Week
     """out_root 아래 모든 briefing.json을 읽어 최근 days일치, issue_title이 있는 것만 모은다.
 
     (매체 수, 기사 수) 내림차순으로 정렬한다 — write_script의 프롬프트도 이 순서를 따른다.
+
+    today는 aware/naive 둘 다 받는다 — build_weekly의 실제 호출자(now_kst())는 aware라
+    naive로 맞춰 비교한다(briefing.json의 date는 타임존 없는 "YYYY-MM-DD" 문자열이므로).
     """
+    if today.tzinfo is not None:
+        today = today.replace(tzinfo=None)
+
     candidates: list[WeeklyCandidate] = []
     for path in out_root.glob("*/briefing.json"):
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if data.get("issue_title") is None:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("issue_title") is None:
+                continue
+            date = datetime.strptime(data["date"], "%Y-%m-%d")
+            delta = (today - date).days
+            if not (0 <= delta < days):
+                continue
+            candidates.append(WeeklyCandidate(
+                date=data["date"],
+                edition=data["edition"],
+                headline=data["headline"],
+                issue_title=data["issue_title"],
+                sources=data["sources"],
+                article_count=data["article_count"],
+                cards=data["cards"],
+            ))
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            print(f"! briefing.json 손상 — 건너뜀: {path} ({exc})")
             continue
-        date = datetime.strptime(data["date"], "%Y-%m-%d")
-        if not (today - date).days < days:
-            continue
-        candidates.append(WeeklyCandidate(
-            date=data["date"],
-            edition=data["edition"],
-            headline=data["headline"],
-            issue_title=data["issue_title"],
-            sources=data["sources"],
-            article_count=data["article_count"],
-            cards=data["cards"],
-        ))
     return sorted(candidates, key=lambda c: (len(c.sources), c.article_count), reverse=True)
 
 
@@ -208,9 +219,15 @@ def _clean_texts(payload: dict) -> dict:
     }
 
 
-def audit(texts: dict, source: str) -> dict[str, list[str]]:
-    """근거 없는 수치·잔여 한자·길이 위반을 찾는다. 키는 'hook' | 'reason:<index>'."""
+def audit(texts: dict, source: str, candidates: list[WeeklyCandidate]) -> dict[str, list[str]]:
+    """근거 없는 수치·잔여 한자·길이·지어낸 매체명 위반을 찾는다. 키는 'hook' | 'reason:<index>'.
+
+    candidates는 프롬프트에 실제로 실린 후보들(write_script의 top) — reason.source는
+    발행 캡션·영상에 "출처 · {source}"로 그대로 나가므로, candidates의 sources 합집합에
+    없는 매체명(지어낸 이름)과 빈 값을 기계로 막는다.
+    """
     problems: dict[str, list[str]] = {}
+    known_sources = {s for c in candidates for s in c.sources}
 
     hook = texts["hook"]
     bad = unsupported_amounts(hook, source)
@@ -243,6 +260,14 @@ def audit(texts: dict, source: str) -> dict[str, list[str]]:
                 f"body {len(reason['body'])}자 — {REASON_BODY_MAX}자 이내로 줄이십시오"
             )
 
+        pieces = [p.strip() for p in reason["source"].split("·")]
+        bad_sources = [p for p in pieces if not p or p not in known_sources]
+        if bad_sources:
+            problems.setdefault(f"reason:{index}", []).append(
+                f"source가 비어 있거나 자료에 없는 매체명입니다({reason['source']!r}) — "
+                "후보 자료에 실제로 등장한 매체명만 '·'로 이어 쓰십시오"
+            )
+
     return problems
 
 
@@ -269,7 +294,7 @@ def write_script(candidates: list[WeeklyCandidate], client: anthropic.Anthropic 
     payload, input_tokens, output_tokens = _generate(caller, prompt)
     chosen = _chosen(payload, top)
     texts = _clean_texts(payload)
-    problems = audit(texts, prompt)
+    problems = audit(texts, prompt, top)
 
     if problems:
         retry_prompt = (
@@ -281,7 +306,7 @@ def write_script(candidates: list[WeeklyCandidate], client: anthropic.Anthropic 
         output_tokens += retry_out
         chosen = _chosen(payload, top)
         texts = _clean_texts(payload)
-        problems = audit(texts, prompt)
+        problems = audit(texts, prompt, top)
 
     if problems:
         raise WeeklyError(f"수치·한자·길이 검증에 실패했습니다:\n{_describe(problems)}")
@@ -321,6 +346,8 @@ def weekly_series(label: str) -> Series:
     history = yf.Ticker(ticker).history(period="3mo", auto_adjust=False)
     closes = [float(v) for v in history["Close"] if v == v]
     dates = [d.to_pydatetime() for d, v in history["Close"].items() if v == v]
+    if not closes:
+        raise WeeklyError(f"시세가 비어 있습니다: {label}")
     return Series(
         name=label, ticker=ticker, closes=closes, dates=dates,
         currency=_currency_for(ticker), intraday=False,

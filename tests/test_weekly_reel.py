@@ -11,9 +11,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from econ_insta import audio, reels, weekly_reel
+from econ_insta.collector import KST
 from econ_insta.stock_brief import Reason
 
-TODAY = datetime(2026, 8, 30, 19, 0)
+# aware(KST) — build_weekly의 실제 호출자 now_kst()도 aware다. 회귀 방지: 이 fixture를
+# naive로 되돌리면 load_candidates의 aware/naive 뺄셈 버그가 다시 숨을 수 있다.
+TODAY = datetime(2026, 8, 30, 19, 0, tzinfo=KST)
 
 
 def _write_briefing(root, date, edition, sources, count, title="이슈"):
@@ -54,6 +57,32 @@ class LoadCandidatesTest(unittest.TestCase):
                 "issue_title": None, "sources": [], "article_count": 0, "cards": [],
             }), encoding="utf-8")
             self.assertEqual(weekly_reel.load_candidates(root, TODAY), [])
+
+    def test_미래_날짜는_제외(self):
+        """Minor 4 — 창 필터는 미래 날짜도 걸러야 한다(0 <= delta < days)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_briefing(root, "2026-09-02", "kr", ["매일경제"], 3, "미래 이슈")
+            self.assertEqual(weekly_reel.load_candidates(root, TODAY), [])
+
+    def test_aware_today는_naive_today와_같은_결과(self):
+        """Critical 1 회귀 락 — aware today(now_kst()가 실제로 넘기는 형태)로도 TypeError 없이 동작해야 한다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_briefing(root, "2026-08-26", "kr", ["매일경제"], 3, "이슈")
+            got = weekly_reel.load_candidates(root, TODAY)  # TODAY는 이제 aware
+            self.assertEqual([c.issue_title for c in got], ["이슈"])
+
+    def test_손상된_briefing_json은_경고_후_스킵(self):
+        """Task-6 ledger minor — 손상된 파일 하나가 전체 로드를 죽이면 안 된다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_briefing(root, "2026-08-26", "kr", ["매일경제"], 3, "정상 이슈")
+            broken_dir = root / "2026-08-27-kr"
+            broken_dir.mkdir()
+            (broken_dir / "briefing.json").write_text("{이건 json이 아닙니다", encoding="utf-8")
+            got = weekly_reel.load_candidates(root, TODAY)
+            self.assertEqual([c.issue_title for c in got], ["정상 이슈"])
 
 
 class IssueIndexGuardTest(unittest.TestCase):
@@ -198,6 +227,41 @@ class WriteScriptRetryTest(unittest.TestCase):
             weekly_reel.write_script(two_candidates(), client=client)
         self.assertEqual(client.calls, 2)
 
+    def test_지어낸_매체명은_재시도로_돌린다(self):
+        """Important 3 — reason.source는 발행물에 '출처 · {source}'로 그대로 나간다.
+        후보 자료(two_candidates)에 없는 매체명("가짜매체")은 audit이 잡아야 한다."""
+        bad = script_payload(reasons=[
+            {"title": "이유 하나", "body": "본문 설명입니다.", "source": "가짜매체"},
+            {"title": "이유 둘", "body": "다른 본문 설명입니다.", "source": "연합뉴스"},
+        ])
+        good = script_payload()
+        client = FakeClient([bad, good])
+        result = weekly_reel.write_script(two_candidates(), client=client)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(result.reasons[0].source, "매일경제")
+
+    def test_지어낸_매체명이_계속_남으면_실패(self):
+        bad = script_payload(reasons=[
+            {"title": "이유 하나", "body": "본문 설명입니다.", "source": "가짜매체"},
+            {"title": "이유 둘", "body": "다른 본문 설명입니다.", "source": "연합뉴스"},
+        ])
+        client = FakeClient([bad, bad])
+        with self.assertRaises(weekly_reel.WeeklyError):
+            weekly_reel.write_script(two_candidates(), client=client)
+        self.assertEqual(client.calls, 2)
+
+    def test_빈_source도_위반(self):
+        """빈/공백 source는 캡션에 '출처 · '만 남는 dangling 라인이 되므로 위반이어야 한다."""
+        bad = script_payload(reasons=[
+            {"title": "이유 하나", "body": "본문 설명입니다.", "source": "  "},
+            {"title": "이유 둘", "body": "다른 본문 설명입니다.", "source": "연합뉴스"},
+        ])
+        good = script_payload()
+        client = FakeClient([bad, good])
+        result = weekly_reel.write_script(two_candidates(), client=client)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(result.reasons[0].source, "매일경제")
+
 
 class BuildWeeklySkipTest(unittest.TestCase):
     def test_zero_candidates_returns_none_and_writes_skipped_txt(self):
@@ -212,6 +276,18 @@ class BuildWeeklySkipTest(unittest.TestCase):
                     self.assertTrue(skipped_path.exists())
                     content = skipped_path.read_text(encoding="utf-8")
                     self.assertIn("후보 없음", content)
+
+
+class WeeklySeriesTest(unittest.TestCase):
+    def test_빈_시세는_WeeklyError(self):
+        """Minor 5 — 빈 DataFrame이면 closes=[]가 되어 downstream min()이 죽기 전에 여기서 막는다."""
+        import pandas as pd
+
+        empty_history = pd.DataFrame({"Close": pd.Series([], dtype=float)})
+        fake_ticker = SimpleNamespace(history=lambda **kw: empty_history)
+        with patch("yfinance.Ticker", return_value=fake_ticker):
+            with self.assertRaises(weekly_reel.WeeklyError):
+                weekly_reel.weekly_series("코스피")
 
 
 def _script():

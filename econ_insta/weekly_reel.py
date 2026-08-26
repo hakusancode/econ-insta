@@ -417,7 +417,7 @@ def build_weekly(when: datetime | None = None, client: anthropic.Anthropic | Non
 
     fonts = FontSet.discover()
     cover_render = reels.anim_cover(
-        script.hook, series.change_pct(5), when, fonts, kicker="주간 이슈 브리핑",
+        script.hook, when, fonts, kicker="주간 이슈 브리핑",
         background=bg.image if bg else None,
     )
     scenes = [reels.Scene(None, reels.COVER_SECONDS, render=cover_render)]

@@ -68,11 +68,6 @@ class MotionMathTest(unittest.TestCase):
         self.assertEqual(reels.ease_out_cubic(-1.0), 0.0)   # 클램프
         self.assertEqual(reels.ease_out_cubic(2.0), 1.0)
 
-    def test_count_value는_p06에_목표_도달(self):
-        self.assertEqual(reels._count_value(-34.0, 0.0), 0.0)
-        self.assertAlmostEqual(reels._count_value(-34.0, 0.6), -34.0)
-        self.assertAlmostEqual(reels._count_value(-34.0, 1.0), -34.0)
-
     def test_visible_count_경계와_단조증가(self):
         n = 63
         values = [reels._visible_count(n, i / 100) for i in range(101)]
@@ -83,11 +78,11 @@ class MotionMathTest(unittest.TestCase):
 
 class AnimSceneTest(unittest.TestCase):
     def test_anim_cover_시작과_끝_프레임이_다르다(self):
-        render = reels.anim_cover("코스피 급락", -6.4, WHEN, _fonts(), kicker="주간 이슈 브리핑")
+        render = reels.anim_cover("코스피 급락", WHEN, _fonts(), kicker="주간 이슈 브리핑")
         self.assertNotEqual(render(0.0).tobytes(), render(1.0).tobytes())
 
     def test_anim_cover_마지막_프레임은_결정적이다(self):
-        render = reels.anim_cover("코스피 급락", -6.4, WHEN, _fonts(), kicker="주간 이슈 브리핑")
+        render = reels.anim_cover("코스피 급락", WHEN, _fonts(), kicker="주간 이슈 브리핑")
         self.assertEqual(render(1.0).tobytes(), render(1.0).tobytes())
 
     def test_anim_chart_중간에는_선이_덜_그려진다(self):

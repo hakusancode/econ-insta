@@ -302,11 +302,6 @@ def ease_out_cubic(p: float) -> float:
     return 1 - (1 - p) ** 3
 
 
-def _count_value(target: float, p: float) -> float:
-    """도입부 카운트업: 장면 앞 60% 동안 0 → target."""
-    return target * ease_out_cubic(min(p / 0.6, 1.0))
-
-
 def _visible_count(n: int, p: float) -> int:
     """차트 드로잉: 장면 앞 70% 동안 가시 점 2 → n."""
     return max(2, math.ceil(n * ease_out_cubic(min(p / 0.7, 1.0))))
@@ -317,13 +312,16 @@ def _visible_count(n: int, p: float) -> int:
 
 def anim_cover(
     headline: str,
-    pct: float | None,
     when: datetime,
     fonts: FontSet,
     kicker: str,
     background: Image.Image | None = None,
 ) -> Callable[[float], Image.Image]:
-    """도입부: 배경 슬로우 줌 + 등락률 카운트업 + 헤드라인 슬라이드인."""
+    """도입부: 배경 슬로우 줌 + 헤드라인 슬라이드인.
+
+    거대 등락률 숫자는 넣지 않는다 — 사용자가 두 번 기각한 시안이다(2026-07 PIL 시안,
+    2026-08-26 첫 주간 릴스). 표지는 인물 사진이 주인공이고 숫자는 차트 장면 몫이다.
+    """
     base = Image.new("RGB", (WIDTH, HEIGHT), BG_COVER)
     photo = cover_crop(background) if background is not None else None
     shade = _shade()
@@ -341,15 +339,6 @@ def anim_cover(
         draw = ImageDraw.Draw(image)
         draw.text((MARGIN, MARGIN + 40), kicker, font=fonts.at(44, bold=True), fill=ACCENT)
         draw.text((MARGIN, MARGIN + 112), f"{when:%Y년 %m월 %d일}", font=fonts.at(34), fill=MUTED)
-        if pct is not None:
-            value = _count_value(pct, p)
-            draw.text(
-                (WIDTH // 2, 620),
-                _fmt_pct(value),
-                font=fonts.at(190, bold=True),
-                fill=_change_color(pct),
-                anchor="mm",
-            )
         seg = ease_out_cubic(min(max((p - 0.55) / 0.25, 0.0), 1.0))
         if seg > 0:
             overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
@@ -502,9 +491,8 @@ def build_stock_reel(
     """종목 브리핑 → 릴스 mp4 + 표지 이미지(cover_url용). 둘 다 경로를 돌려준다."""
     fonts = fonts or FontSet.discover()
 
-    day_change = brief.series.change_pct(1)
     cover_render = anim_cover(
-        brief.headline, day_change, when, fonts, kicker="종목 이슈 브리핑", background=background
+        brief.headline, when, fonts, kicker="종목 이슈 브리핑", background=background
     )
     scenes = [Scene(None, COVER_SECONDS, render=cover_render)]
     scenes += [

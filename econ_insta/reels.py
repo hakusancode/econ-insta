@@ -22,7 +22,7 @@ CLI:
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -272,10 +272,13 @@ def scene_chart(series: Series, when: datetime, fonts: FontSet) -> Image.Image:
 
 @dataclass(frozen=True)
 class Scene:
-    image: Image.Image
+    image: Image.Image | None
     seconds: float
     zoom: float = 1.0
-    """장면이 끝날 때의 확대율. 1.0이면 정지, 1.06이면 아주 느리게 밀려든다."""
+    """정지 장면 전용 — 장면이 끝날 때의 확대율."""
+    render: Callable[[float], Image.Image] | None = None
+    """애니메이션 장면: 진행률 p(0.0~1.0)를 받아 그 시점 프레임을 그린다.
+    있으면 image·zoom은 무시된다. 페이드는 frames()가 공통으로 얹는다."""
 
 
 def _zoomed(image: Image.Image, scale: float) -> Image.Image:
@@ -300,7 +303,10 @@ def frames(scenes: list[Scene]) -> Iterator[Image.Image]:
         total = max(int(scene.seconds * FPS), 1)
         for i in range(total):
             progress = i / max(total - 1, 1)
-            frame = _zoomed(scene.image, 1.0 + (scene.zoom - 1.0) * progress)
+            if scene.render is not None:
+                frame = scene.render(progress)
+            else:
+                frame = _zoomed(scene.image, 1.0 + (scene.zoom - 1.0) * progress)
 
             if i < fade_frames:  # 페이드 인
                 frame = Image.blend(black, frame, i / fade_frames)

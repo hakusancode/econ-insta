@@ -1,10 +1,38 @@
 import unittest
-from PIL import Image
+from datetime import datetime
+from pathlib import Path
+
+from PIL import Image, ImageFont
+
 from econ_insta import reels
+from econ_insta.renderer import FontSet
+from econ_insta.stock_brief import Reason, Series
+
+WHEN = datetime(2026, 8, 26, 12, 0)
 
 
 def _solid(color):
     return Image.new("RGB", (reels.WIDTH, reels.HEIGHT), color)
+
+
+class StubFonts(FontSet):
+    """실제 폰트 파일 없이 크기별 기본 폰트를 돌려준다."""
+
+    def __init__(self) -> None:
+        super().__init__(regular=Path("stub"), bold=Path("stub"))
+
+    def at(self, size: int, *, bold: bool = False, weight=None):
+        return ImageFont.load_default(size)
+
+
+def _fonts() -> FontSet:
+    return StubFonts()
+
+
+def _series() -> Series:
+    closes = [100.0 + i for i in range(63)]
+    dates = [WHEN] * 63
+    return Series(name="코스피", ticker="^KS11", closes=closes, dates=dates)
 
 
 class SceneRenderTest(unittest.TestCase):
@@ -51,3 +79,24 @@ class MotionMathTest(unittest.TestCase):
         self.assertEqual(values[0], 2)
         self.assertEqual(values[-1], n)
         self.assertEqual(values, sorted(values))
+
+
+class AnimSceneTest(unittest.TestCase):
+    def test_anim_cover_시작과_끝_프레임이_다르다(self):
+        render = reels.anim_cover("코스피 급락", -6.4, WHEN, _fonts(), kicker="주간 이슈 브리핑")
+        self.assertNotEqual(render(0.0).tobytes(), render(1.0).tobytes())
+
+    def test_anim_cover_마지막_프레임은_결정적이다(self):
+        render = reels.anim_cover("코스피 급락", -6.4, WHEN, _fonts(), kicker="주간 이슈 브리핑")
+        self.assertEqual(render(1.0).tobytes(), render(1.0).tobytes())
+
+    def test_anim_chart_중간에는_선이_덜_그려진다(self):
+        render = reels.anim_chart(_series(), WHEN, _fonts())
+        # 진행 30% 시점 프레임은 완성 프레임과 달라야 한다(오른쪽 구간 미가시).
+        self.assertNotEqual(render(0.3).tobytes(), render(1.0).tobytes())
+
+    def test_anim_reason_끝_프레임은_정지_장면과_같다(self):
+        reason = Reason(title="수급 붕괴", body="외국인 순매도가 이어졌다.", source="매일경제")
+        anim = reels.anim_reason(reason, 1, 2, _fonts())(1.0)
+        still = reels.scene_reason(reason, 1, 2, _fonts())
+        self.assertEqual(anim.tobytes(), still.tobytes())

@@ -1,0 +1,76 @@
+# 주간 릴스 자동 발행 (스펙 docs/superpowers/specs/2026-08-26-motion-weekly-reels-design.md)
+# KST 일요일 19:00. GitHub cron은 밀리거나 빠진다 — 25분 뒤 예비 크론 + published.txt 마커.
+
+name: Weekly reel
+
+on:
+  schedule:
+    - cron: "0 10 * * 0"    # KST 일요일 19:00
+    - cron: "25 10 * * 0"   # 예비
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: weekly-reel
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+
+      - name: Resolve date
+        id: meta
+        run: echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if already published
+        id: guard
+        run: |
+          marker="out/${{ steps.meta.outputs.date }}-weekly-reel/published.txt"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "$marker" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "이번 주 릴스는 이미 발행됨 ($(cat "$marker")) — 종료"
+          fi
+
+      - name: Render
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m econ_insta.weekly_reel --render
+
+      - name: Host video (Pages)
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f out/
+          git diff --cached --quiet || git commit -m "out: weekly reel ${{ steps.meta.outputs.date }} [skip ci]"
+          git pull --rebase origin main
+          git push origin main
+
+      - name: Publish
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: python -m econ_insta.weekly_reel --publish
+
+      - name: Mark published
+        if: steps.guard.outputs.skip != 'true' && github.event_name == 'schedule'
+        run: |
+          out="out/${{ steps.meta.outputs.date }}-weekly-reel"
+          if [ -f "$out/skipped.txt" ]; then
+            echo "이번 주는 소재 없음 — 마커 없이 종료"
+            exit 0
+          fi
+          marker="$out/published.txt"
+          date -u +%FT%TZ > "$marker"
+          git add -f "$marker"
+          git commit -m "out: weekly reel ${{ steps.meta.outputs.date }} 발행 마커 [skip ci]"
+          git pull --rebase origin main
+          git push origin main

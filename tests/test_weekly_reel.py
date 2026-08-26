@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from econ_insta import audio, reels, weekly_reel
 from econ_insta.stock_brief import Reason
@@ -196,6 +197,21 @@ class WriteScriptRetryTest(unittest.TestCase):
         with self.assertRaises(weekly_reel.WeeklyError):
             weekly_reel.write_script(two_candidates(), client=client)
         self.assertEqual(client.calls, 2)
+
+
+class BuildWeeklySkipTest(unittest.TestCase):
+    def test_zero_candidates_returns_none_and_writes_skipped_txt(self):
+        """후보 0건이면 out 디렉터리에 skipped.txt를 쓰고 None을 돌려준다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch('econ_insta.weekly_reel.PROJECT_ROOT', root):
+                with patch('econ_insta.weekly_reel.load_candidates', return_value=[]):
+                    result = weekly_reel.build_weekly(when=TODAY)
+                    self.assertIsNone(result)
+                    skipped_path = root / "out" / f"{TODAY:%Y-%m-%d}-weekly-reel" / "skipped.txt"
+                    self.assertTrue(skipped_path.exists())
+                    content = skipped_path.read_text(encoding="utf-8")
+                    self.assertIn("후보 없음", content)
 
 
 def _script():

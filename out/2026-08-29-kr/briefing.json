@@ -1,0 +1,65 @@
+{
+  "date": "2026-08-29",
+  "edition": "kr",
+  "headline": "코로나 소상공인 빚, 정부가 탕감 나선다",
+  "issue_title": "정부, 코로나 소상공인 빚탕감 추진…성실 상환땐 인센티브 준다는데",
+  "sources": [
+    "매일경제",
+    "한국경제"
+  ],
+  "article_count": 4,
+  "articles": [
+    {
+      "title": "정부, 코로나 소상공인 빚탕감 추진…성실 상환땐 인센티브 준다는데",
+      "source": "매일경제",
+      "link": "https://www.mk.co.kr/news/economy/12139151",
+      "published": "2026-08-28T19:45:45+09:00",
+      "images": [
+        "https://pimg.mk.co.kr/news/cms/202608/28/news-p.v1.20260828.8d14a655071745cab559e468de2ced4f_R.png"
+      ]
+    },
+    {
+      "title": "코로나 소상공인 빚 탕감 … 3년 이상 연체자가 대상",
+      "source": "매일경제",
+      "link": "https://www.mk.co.kr/news/economy/12139053",
+      "published": "2026-08-28T17:45:43+09:00",
+      "images": [
+        "https://pimg.mk.co.kr/news/cms/202608/29/20260829_01160109000002_L00.jpg"
+      ]
+    },
+    {
+      "title": "코로나 피해 소상공인 3년 넘은 빚 탕감",
+      "source": "한국경제",
+      "link": "https://www.hankyung.com/article/2026082800881",
+      "published": "2026-08-28T17:39:26+09:00",
+      "images": []
+    },
+    {
+      "title": "“금리 오를 땐 짧게 끊어 가는게 정답”…6개월 미만 예금 증가, 3년7개월만에 최대",
+      "source": "매일경제",
+      "link": "https://www.mk.co.kr/news/economy/12138689",
+      "published": "2026-08-28T13:24:12+09:00",
+      "images": [
+        "https://pimg.mk.co.kr/news/cms/202608/28/rcv.YNA.20260611.PYH2026061114690001300_R.jpg"
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "title": "3년 넘은 연체, 정부가 소각 검토",
+      "source": "매일경제"
+    },
+    {
+      "title": "금리 상승기 취약차주 대책",
+      "source": "매일경제"
+    },
+    {
+      "title": "성실 상환자엔 인센티브",
+      "source": "매일경제"
+    },
+    {
+      "title": "세부안은 4분기에 확정",
+      "source": "매일경제·한국경제"
+    }
+  ]
+}

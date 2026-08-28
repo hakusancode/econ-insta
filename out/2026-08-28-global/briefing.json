@@ -1,0 +1,55 @@
+{
+  "date": "2026-08-28",
+  "edition": "global",
+  "headline": "엔비디아 한 방에 뒤집힌 AI 공포",
+  "issue_title": "Nvidia’s Victory Lap",
+  "sources": [
+    "WSJ"
+  ],
+  "article_count": 3,
+  "articles": [
+    {
+      "title": "Nvidia’s Victory Lap",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/stocks/nvidias-victory-lap-bbe710b5?mod=rss_markets_main",
+      "published": "2026-08-28T05:29:00+09:00",
+      "images": [
+        "https://images.wsj.net/im-70973654"
+      ]
+    },
+    {
+      "title": "Stocks Climb as Nvidia’s Bullish Forecast Lifts Investors’ Spirits",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/stocks/nasdaq-futures-buoyed-by-nvidia-earnings-software-as-oil-falls-ff5cea2d?mod=rss_markets_main",
+      "published": "2026-08-28T01:53:00+09:00",
+      "images": [
+        "https://images.wsj.net/im-09924062"
+      ]
+    },
+    {
+      "title": "European Chip Stocks Rise After Nvidia Results, Guidance",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/stocks/nikkei-rises-0-7-led-by-chip-stocks-1cae7bf0?mod=rss_markets_main",
+      "published": "2026-08-27T17:14:00+09:00",
+      "images": []
+    }
+  ],
+  "cards": [
+    {
+      "title": "엔비디아 깜짝 실적 전망, 시장 들썩",
+      "source": "WSJ"
+    },
+    {
+      "title": "AI 거품 우려에 지친 투자자들",
+      "source": "WSJ"
+    },
+    {
+      "title": "반도체 넘어 소프트웨어까지 랠리",
+      "source": "WSJ"
+    },
+    {
+      "title": "AI 붐, 이번엔 진짜 이어질까",
+      "source": "WSJ"
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "date": "2026-08-29",
+  "edition": "global",
+  "headline": "워시의 경고, 금리인상 베팅에 불붙다",
+  "issue_title": "U.S. Natural Gas Futures Make Small Weekly Gains",
+  "sources": [
+    "The Economist",
+    "WSJ"
+  ],
+  "article_count": 8,
+  "articles": [
+    {
+      "title": "U.S. Natural Gas Futures Make Small Weekly Gains",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/articles/u-s-natural-gas-futures-give-back-some-gains-a266ce55?mod=rss_markets_main",
+      "published": "2026-08-29T04:59:00+09:00",
+      "images": []
+    },
+    {
+      "title": "Oil Futures End Week Lower As More Oil Seen Moving",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/commodities-futures/oil-edges-higher-on-fading-hopes-for-strait-of-hormuzs-reopening-7cf0d26d?mod=rss_markets_main",
+      "published": "2026-08-29T04:52:00+09:00",
+      "images": []
+    },
+    {
+      "title": "Gold Settles Lower on Warsh Concerns About Inflation",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/commodities-futures/gold-falls-as-markets-await-jackson-hole-4f46864e?mod=rss_markets_main",
+      "published": "2026-08-29T03:44:00+09:00",
+      "images": []
+    },
+    {
+      "title": "Stocks Lower as Fed’s Warsh Comments Boost Rate-Hike Bets",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/stocks/u-s-stock-futures-mixed-ahead-of-fed-chair-warshs-jackson-hole-debut-5c045a6d?mod=rss_markets_main",
+      "published": "2026-08-29T03:11:00+09:00",
+      "images": [
+        "https://images.wsj.net/im-06259819"
+      ]
+    },
+    {
+      "title": "Dollar Rises as Warsh Acknowledges Inflation Risk",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/currencies/asian-currencies-consolidate-ahead-of-fed-warshs-speech-561feb99?mod=rss_markets_main",
+      "published": "2026-08-28T23:33:00+09:00",
+      "images": []
+    },
+    {
+      "title": "U.S. Natural Gas Futures Give Back Some Gains",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/commodities-futures/u-s-natural-gas-futures-give-back-some-gains-1d5fcce6?mod=rss_markets_main",
+      "published": "2026-08-28T22:37:00+09:00",
+      "images": []
+    },
+    {
+      "title": "U.K. Defense Stocks Fall as Government Likely to Drop Spending Targets",
+      "source": "WSJ",
+      "link": "https://www.wsj.com/finance/stocks/nikkei-rises-0-4-led-by-it-services-stocks-579fdd38?mod=rss_markets_main",
+      "published": "2026-08-28T17:17:00+09:00",
+      "images": []
+    },
+    {
+      "title": "Why is Russia deliberately weakening its currency?",
+      "source": "The Economist",
+      "link": "https://www.economist.com/finance-and-economics/2026/08/26/why-is-russia-deliberately-weakening-its-currency",
+      "published": "2026-08-27T03:28:55+09:00",
+      "images": []
+    }
+  ],
+  "cards": [
+    {
+      "title": "워시 잭슨홀서 인플레 경고",
+      "source": "WSJ"
+    },
+    {
+      "title": "왜 시장이 긴장했나",
+      "source": "WSJ"
+    },
+    {
+      "title": "금값 하락, 증시 혼조",
+      "source": "WSJ"
+    },
+    {
+      "title": "다음 관전 포인트는 연준 결정",
+      "source": "WSJ"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-30",
+  "edition": "kr",
+  "headline": "예상 깨고 금리 올린 한은, 매파는 어디까지",
+  "issue_title": "워시 '매파 본색'에도 '美 국채 30년 만기' 덜 뛴 이유…뒤엔 베센트가 있었다? [글로벌 머니 X파일]",
+  "sources": [
+    "매일경제",
+    "한국경제"
+  ],
+  "article_count": 2,
+  "articles": [
+    {
+      "title": "워시 '매파 본색'에도 '美 국채 30년 만기' 덜 뛴 이유…뒤엔 베센트가 있었다? [글로벌 머니 X파일]",
+      "source": "한국경제",
+      "link": "https://www.hankyung.com/article/202608290782i",
+      "published": "2026-08-29T14:48:40+09:00",
+      "images": []
+    },
+    {
+      "title": "신현송 총재의 ‘매파본색’ 언제까지 이어질까 [BOK WATCHER]",
+      "source": "매일경제",
+      "link": "https://www.mk.co.kr/news/economy/12139274",
+      "published": "2026-08-29T06:03:02+09:00",
+      "images": [
+        "https://pimg.mk.co.kr/news/cms/202608/29/news-p.v1.20260827.3d48df00f0434692a744e2a0fff61ca7_R.png"
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "title": "금통위, 시장 예상 깨고 금리 인상",
+      "source": "매일경제"
+    },
+    {
+      "title": "신현송 총재의 매파 본색",
+      "source": "매일경제"
+    },
+    {
+      "title": "미국 국채시장은 예상외로 잠잠",
+      "source": "한국경제"
+    },
+    {
+      "title": "매파 기조, 언제까지 이어질까",
+      "source": "매일경제"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "date": "2026-09-01",
+  "edition": "kr",
+  "headline": "잭슨홀 매파발언에 금값 최대낙폭",
+  "issue_title": "연준 9월 금리인상 확률 63%…금값은 6월 이후 최대 낙폭",
+  "sources": [
+    "매일경제",
+    "연합뉴스"
+  ],
+  "article_count": 3,
+  "articles": [
+    {
+      "title": "연준 9월 금리인상 확률 63%…금값은 6월 이후 최대 낙폭",
+      "source": "연합뉴스",
+      "link": "https://www.yna.co.kr/view/AKR20260831107200009",
+      "published": "2026-08-31T14:04:20+09:00",
+      "images": [
+        "https://img.yna.co.kr/photo/ap/2026/08/29/PAP20260829022801009_P2.jpg"
+      ]
+    },
+    {
+      "title": "美연준발 삭풍에 6,600대로 밀린 코스피…불확실성 우려↑",
+      "source": "연합뉴스",
+      "link": "https://www.yna.co.kr/view/AKR20260831083000008",
+      "published": "2026-08-31T11:29:53+09:00",
+      "images": [
+        "https://img.yna.co.kr/photo/yna/YH/2026/08/31/PYH2026083102500001300_P2.jpg"
+      ]
+    },
+    {
+      "title": "케빈 워시의 첫 잭슨홀 연설 … 매파 발언 속에 숨은 진짜 메시지는",
+      "source": "매일경제",
+      "link": "https://www.mk.co.kr/news/economy/12139815",
+      "published": "2026-08-31T05:00:00+09:00",
+      "images": [
+        "https://pimg.mk.co.kr/news/cms/202608/31/news-p.v1.20260830.5c2785c10584427ba4f473b25d0a3271_R.png"
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "title": "워시 의장 발언에 9월 금리인상 확률 급등",
+      "source": "연합뉴스"
+    },
+    {
+      "title": "시장이 '매파'로 읽은 워시의 첫 잭슨홀 연설",
+      "source": "매일경제"
+    },
+    {
+      "title": "코스피, 연준발 삭풍에 6,600대로 밀려",
+      "source": "연합뉴스"
+    },
+    {
+      "title": "관심은 다시 9월 FOMC로",
+      "source": "매일경제·연합뉴스"
+    }
+  ]
+}
